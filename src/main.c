@@ -4,13 +4,33 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
-#define BTN_PIN 2
+#define BTN_COUNT 21
+#define BOOTSEL_PIN 27
+static const uint BTN_PINS[] = {
+  5,  3, 4,
+  2,
+  10,11,12,13,
+  6,  7, 8, 9,
+  27,   18,
+  26,   19,
+  14,   21, 20, 16, 17,
+};
+
+
+void init_btns() {
+  for (uint i = 0; i < BTN_COUNT; ++i) {
+    uint p = BTN_PINS[i];
+    gpio_init(p);
+    gpio_pull_up(p);
+    gpio_set_dir(p, GPIO_IN);
+  }
+}
 
 static void check_bootsel_hold(void) {
   static bool was_low = false;
   static absolute_time_t t0;
 
-  bool low = (gpio_get(BTN_PIN) == 0) ;
+  bool low = (gpio_get(BOOTSEL_PIN) == 0) ;
   if (low) { // button currently held
     if (!was_low) {
       was_low = true;
@@ -31,31 +51,33 @@ typedef struct __attribute__((packed)) {
   uint8_t pad;      // send 0
 } gamepad_report_t;
 
-static inline uint8_t read_button(void) {
-  // Active low button to GND with pull-up
-  return gpio_get(BTN_PIN) ? 0 : 1; // 1 when pressed
+static inline uint8_t read_buttons() {
+  uint8_t mask = 0;
+  for (int i = 0; i < 8; ++i) {
+    if (!gpio_get(BTN_PINS[i])) { // active low, button pressed
+      mask |= (uint8_t)(1u << i);
+    }
+  }
+  return mask;
 }
 
 int main(void) {
   board_init();
   tusb_init();
+  init_btns();
 
-  gpio_init(BTN_PIN);
-  gpio_pull_up(BTN_PIN);
-  gpio_set_dir(BTN_PIN, GPIO_IN);
-
-  uint8_t last = 0;
+  uint8_t prev = 0;
 
   while (true) {
     tud_task(); // TinyUSB device task
     check_bootsel_hold();
 
     if (tud_hid_ready()) {
-      uint8_t now = read_button();
-      if (now != last) {
-        gamepad_report_t rpt = { .buttons = (uint8_t)(now & 0x01) };
+      uint8_t curr = read_buttons();
+      if (curr != prev) {
+        gamepad_report_t rpt = { .buttons = curr, .pad = 0 };
         tud_hid_report(0, &rpt, sizeof(rpt)); // single report, no ID
-        last = now;
+        prev = curr;
       }
     }
   }
