@@ -47,15 +47,14 @@ static void check_bootsel_hold(void) {
 }
 
 typedef struct __attribute__((packed)) {
-  uint8_t buttons;  // bit0 = Button 1, bits1..7 padding
-  uint8_t pad;      // send 0
+  uint32_t buttons;  // bit0 -> bit20 for 21 btns
 } gamepad_report_t;
 
-static inline uint8_t read_buttons() {
-  uint8_t mask = 0;
-  for (int i = 0; i < 8; ++i) {
+static inline uint32_t read_buttons() {
+  uint32_t mask = 0;
+  for (int i = 0; i < BTN_COUNT; ++i) {
     if (!gpio_get(BTN_PINS[i])) { // active low, button pressed
-      mask |= (uint8_t)(1u << i);
+      mask |= (uint32_t)(1u << i);
     }
   }
   return mask;
@@ -66,16 +65,16 @@ int main(void) {
   tusb_init();
   init_btns();
 
-  uint8_t prev = 0;
+  uint32_t prev = 0;
 
   while (true) {
     tud_task(); // TinyUSB device task
     check_bootsel_hold();
 
     if (tud_hid_ready()) {
-      uint8_t curr = read_buttons();
+      uint32_t curr = read_buttons();
       if (curr != prev) {
-        gamepad_report_t rpt = { .buttons = curr, .pad = 0 };
+        gamepad_report_t rpt = {.buttons = curr};
         tud_hid_report(0, &rpt, sizeof(rpt)); // single report, no ID
         prev = curr;
       }
