@@ -1,9 +1,30 @@
 #include "pico/stdlib.h"
+#include "pico/bootrom.h"
 #include "hardware/gpio.h"
 #include "bsp/board.h"
 #include "tusb.h"
 
 #define BTN_PIN 2
+
+static void check_bootsel_hold(void) {
+  static bool was_low = false;
+  static absolute_time_t t0;
+
+  bool low = (gpio_get(BTN_PIN) == 0) ;
+  if (low) { // button currently held
+    if (!was_low) {
+      was_low = true;
+      t0 = get_absolute_time();
+    } else {
+      // 5s elapsed?
+      if (absolute_time_diff_us(t0, get_absolute_time()) >= 5000000) {
+        reset_usb_boot(0, 0);
+      }
+    }
+  } else { // button was released
+    was_low = false;
+  }
+}
 
 typedef struct __attribute__((packed)) {
   uint8_t buttons;  // bit0 = Button 1, bits1..7 padding
@@ -27,6 +48,7 @@ int main(void) {
 
   while (true) {
     tud_task(); // TinyUSB device task
+    check_bootsel_hold();
 
     if (tud_hid_ready()) {
       uint8_t now = read_button();
