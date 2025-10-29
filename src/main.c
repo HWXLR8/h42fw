@@ -73,7 +73,7 @@ typedef struct {
   uint right;
   uint up;
   uint down;
-  uint time;
+  uint64_t time;
 } cd_state;
 
 void init_btns() {
