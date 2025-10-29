@@ -13,7 +13,7 @@ config: $(PICO_SDK_PATH)
 build: config
 	cmake --build build -j
 
-flash:
+flash: build
 	$(PICOTOOL_PATH) load -v -x $(BIN)
 
 clean:
