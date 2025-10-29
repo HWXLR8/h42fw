@@ -6,20 +6,80 @@
 
 #define BTN_COUNT 21
 #define BOOTSEL_PIN 27
-static const uint BTN_PINS[] = {
-  5,  3, 4,
-  2,
-  10,11,12,13,
-  6,  7, 8, 9,
-  27,   18,
-  26,   19,
-  14,   21, 20, 16, 17,
+
+typedef enum {
+  NEUTRAL,    // L+R = 0 or U+D = 0
+  LAST_INPUT, // last input wins
+} SOCD_MODE;
+
+SOCD_MODE socd = LAST_INPUT;
+
+typedef enum {
+  LEFT = 0,
+  DOWN,
+  RIGHT,
+  B1,
+  B2,
+  B3,
+  B4,
+  B5,
+  B6,
+  B7,
+  B8,
+  B9,
+  B10,
+  UP,
+  B11,
+  B12,
+  B13,
+  B14,
+  B15,
+  B16,
+  B17,
+} BTN_BIT;
+
+typedef struct {
+  uint pin;
+  uint bit;
+} button_map;
+
+static const button_map BTN_MAP[] = {
+  {5, LEFT},
+  {3, DOWN},
+  {4, RIGHT},
+  {2, B1},
+  {10, B2},
+  {11, B3},
+  {12, B4},
+  {13, B5},
+  {6, B6},
+  {7, B7},
+  {8, B8},
+  {9, B9},
+  {27, B10},
+  {18, B11},
+  {26, UP},
+  {19, B12},
+  {14, B13},
+  {21, B14},
+  {20, B15},
+  {16, B16},
+  {17, B17},
 };
 
+// cardinal directions
+typedef struct {
+  uint left;
+  uint right;
+  uint up;
+  uint down;
+  uint time;
+} cd_state;
 
 void init_btns() {
+  // enable inputs w/ pull ups
   for (uint i = 0; i < BTN_COUNT; ++i) {
-    uint p = BTN_PINS[i];
+    uint p = BTN_MAP[i].pin;
     gpio_init(p);
     gpio_pull_up(p);
     gpio_set_dir(p, GPIO_IN);
@@ -37,7 +97,7 @@ static void check_bootsel_hold(void) {
       t0 = get_absolute_time();
     } else {
       // 5s elapsed?
-      if (absolute_time_diff_us(t0, get_absolute_time()) >= 5000000) {
+      if (absolute_time_diff_us(t0, get_absolute_time()) >= 3000000) {
         reset_usb_boot(0, 0);
       }
     }
@@ -50,11 +110,47 @@ typedef struct __attribute__((packed)) {
   uint32_t buttons;  // bit0 -> bit20 for 21 btns
 } gamepad_report_t;
 
-static inline uint32_t read_buttons() {
+static inline uint32_t read_buttons(cd_state* cd) {
   uint32_t mask = 0;
+
   for (int i = 0; i < BTN_COUNT; ++i) {
-    if (!gpio_get(BTN_PINS[i])) { // active low, button pressed
-      mask |= (uint32_t)(1u << i);
+    const uint bit = BTN_MAP[i].bit;
+    const uint p   = BTN_MAP[i].pin;
+
+    // if button pressed (active low)
+    if (!gpio_get(p)) {
+      mask |= (uint32_t)(1u << bit);
+
+      // timestamp when pressed
+      if (bit == LEFT)  { if (cd->left  == 0) cd->left  = ++cd->time;}
+      if (bit == RIGHT) { if (cd->right == 0) cd->right = ++cd->time;}
+      if (bit == UP)    { if (cd->up    == 0) cd->up    = ++cd->time;}
+      if (bit == DOWN)  { if (cd->down  == 0) cd->down  = ++cd->time;}
+    } else {
+      if (bit == LEFT)  cd->left  = 0;
+      if (bit == RIGHT) cd->right = 0;
+      if (bit == UP)    cd->up    = 0;
+      if (bit == DOWN)  cd->down  = 0;
+    }
+  }
+  // SOCD cleaning
+  if (socd == LAST_INPUT) {
+    if (cd->left && cd->right) {
+      if (cd->left < cd->right) mask &= ~(1 << LEFT);
+      else mask &= ~(1 << RIGHT);
+    }
+    if (cd->up && cd->down) {
+      if (cd->up < cd->down) mask &= ~(1 << UP);
+      else mask &= ~(1 << DOWN);
+    }
+  } else if (socd == NEUTRAL) {
+    if (cd->left && cd->right) {
+      mask &= ~(1 << LEFT);
+      mask &= ~(1 << RIGHT);
+    }
+    if (cd->up && cd->down) {
+      mask &= ~(1 << UP);
+      mask &= ~(1 << DOWN);
     }
   }
   return mask;
@@ -65,6 +161,7 @@ int main(void) {
   tusb_init();
   init_btns();
 
+  cd_state cd = {0};
   uint32_t prev = 0;
 
   while (true) {
@@ -72,7 +169,7 @@ int main(void) {
     check_bootsel_hold();
 
     if (tud_hid_ready()) {
-      uint32_t curr = read_buttons();
+      uint32_t curr = read_buttons(&cd);
       if (curr != prev) {
         gamepad_report_t rpt = {.buttons = curr};
         tud_hid_report(0, &rpt, sizeof(rpt)); // single report, no ID
