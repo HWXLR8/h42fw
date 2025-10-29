@@ -11,7 +11,7 @@ add_executable(h42fw
     src/usb_descriptors.c
 )
 set_target_properties(h42fw PROPERTIES SUFFIX ".elf")
-
+pico_generate_pio_header(h42fw ${CMAKE_CURRENT_LIST_DIR}/lib/ws2812.pio)
 target_include_directories(h42fw PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
 
 target_link_libraries(h42fw
@@ -19,6 +19,7 @@ target_link_libraries(h42fw
     tinyusb_device
     tinyusb_board
     hardware_gpio
+    hardware_pio
 )
 
 pico_enable_stdio_usb(h42fw 1)

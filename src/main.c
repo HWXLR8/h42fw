@@ -1,11 +1,18 @@
 #include "pico/stdlib.h"
 #include "pico/bootrom.h"
 #include "hardware/gpio.h"
+#include "hardware/pio.h"
+#include "ws2812.pio.h"
 #include "bsp/board.h"
 #include "tusb.h"
 
 #define BTN_COUNT 21
+#define LED_BTN_COUNT 16
 #define BOOTSEL_PIN 27
+// LED
+#define LED_PIN 28
+#define T_RESET_US 300 // > 280us
+#define IS_RGBW false
 
 typedef enum {
   NEUTRAL,    // L+R = 0 or U+D = 0
@@ -44,22 +51,23 @@ typedef struct {
 } button_map;
 
 static const button_map BTN_MAP[] = {
-  {5, LEFT},
-  {3, DOWN},
-  {4, RIGHT},
-  {2, B1},
+  {5,  LEFT},
+  {3,  DOWN},
+  {4,  RIGHT},
+  {2,  B1},
   {10, B2},
   {11, B3},
   {12, B4},
   {13, B5},
-  {6, B6},
-  {7, B7},
-  {8, B8},
-  {9, B9},
+  {6,  B6},
+  {7,  B7},
+  {8,  B8},
+  {9,  B9},
   {27, B10},
   {18, B11},
   {26, UP},
   {19, B12},
+  // no LEDs
   {14, B13},
   {21, B14},
   {20, B15},
@@ -156,10 +164,35 @@ static inline uint32_t read_buttons(cd_state* cd) {
   return mask;
 }
 
+// reorder RGB -> GRB
+static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
+    return ((uint32_t)(g) << 16) | ((uint32_t)(r) << 8) | (uint32_t)(b);
+}
+// ???
+static void put_pixel(PIO pio, uint sm, uint32_t pixel_grb) {
+    // PIO program expects data left-justified
+    pio_sm_put_blocking(pio, sm, pixel_grb << 8);
+}
+
 int main(void) {
   board_init();
   tusb_init();
   init_btns();
+
+  // ws2812
+  PIO pio = pio0;
+  uint sm = 0;
+  uint offset = pio_add_program(pio, &ws2812_program);
+  ws2812_program_init(pio, sm, offset, LED_PIN, 800000, IS_RGBW);
+  // shut off all LEDs
+  for (int i = 0; i < LED_BTN_COUNT; ++i) {
+    put_pixel(pio, sm, urgb_u32(0, 0, 0));
+  }
+  sleep_us(T_RESET_US);
+  for (int i = 0; i < LED_BTN_COUNT; ++i) {
+    put_pixel(pio, sm, urgb_u32(10, 0, 10));
+  }
+  sleep_us(T_RESET_US);
 
   cd_state cd = {0};
   uint32_t prev = 0;
