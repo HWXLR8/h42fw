@@ -6,49 +6,9 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
-#define BTN_COUNT 21
-#define LED_BTN_COUNT 16
-#define BOOTSEL_PIN 14
-// LED
-#define LED_PIN 28
-#define T_RESET_US 400
-#define IS_RGBW false
-
-typedef enum {
-  NEUTRAL,    // L+R = 0 or U+D = 0
-  LAST_INPUT, // last input wins
-} SOCD_MODE;
+#include "config.h"
 
 SOCD_MODE socd = LAST_INPUT;
-
-typedef enum {
-  LEFT = 0,
-  DOWN,
-  RIGHT,
-  B1,
-  B2,
-  B3,
-  B4,
-  B5,
-  B6,
-  B7,
-  B8,
-  B9,
-  B10,
-  UP,
-  B11,
-  B12,
-  B13,
-  B14,
-  B15,
-  B16,
-  B17,
-} BTN_BIT;
-
-typedef struct {
-  uint pin;
-  uint bit;
-} button_map;
 
 static const button_map BTN_MAP[] = {
   {5,  LEFT},
@@ -74,15 +34,6 @@ static const button_map BTN_MAP[] = {
   {16, B16},
   {17, B17},
 };
-
-// cardinal directions
-typedef struct {
-  uint left;
-  uint right;
-  uint up;
-  uint down;
-  uint64_t time;
-} cd_state;
 
 void init_btns() {
   // enable inputs w/ pull ups
@@ -178,7 +129,7 @@ int main(void) {
   PIO pio = pio0;
   uint sm = 0;
   uint offset = pio_add_program(pio, &ws2812_program);
-  ws2812_program_init(pio, sm, offset, LED_PIN, 800000, IS_RGBW);
+  ws2812_program_init(pio, sm, offset, LED_PIN, 800000, false);
   // shut off all LEDs
   for (int i = 0; i < LED_BTN_COUNT; ++i) {
     pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
