@@ -8,10 +8,10 @@
 
 #define BTN_COUNT 21
 #define LED_BTN_COUNT 16
-#define BOOTSEL_PIN 27
+#define BOOTSEL_PIN 14
 // LED
 #define LED_PIN 28
-#define T_RESET_US 300 // > 280us
+#define T_RESET_US 400
 #define IS_RGBW false
 
 typedef enum {
@@ -105,7 +105,7 @@ static void check_bootsel_hold(void) {
       t0 = get_absolute_time();
     } else {
       // 5s elapsed?
-      if (absolute_time_diff_us(t0, get_absolute_time()) >= 3000000) {
+      if (absolute_time_diff_us(t0, get_absolute_time()) >= 500000) {
         reset_usb_boot(0, 0);
       }
     }
@@ -189,8 +189,9 @@ int main(void) {
     put_pixel(pio, sm, urgb_u32(0, 0, 0));
   }
   sleep_us(T_RESET_US);
+
   for (int i = 0; i < LED_BTN_COUNT; ++i) {
-    put_pixel(pio, sm, urgb_u32(10, 0, 10));
+    put_pixel(pio, sm, urgb_u32(5, 0, 5));
   }
   sleep_us(T_RESET_US);
 
