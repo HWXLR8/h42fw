@@ -11,28 +11,28 @@
 SOCD_MODE socd = LAST_INPUT;
 
 static const button_map BTN_MAP[] = {
-  {5,  LEFT},
-  {3,  DOWN},
-  {4,  RIGHT},
-  {2,  B1},
-  {10, B2},
-  {11, B3},
-  {12, B4},
-  {13, B5},
-  {6,  B6},
-  {7,  B7},
-  {8,  B8},
-  {9,  B9},
-  {27, B10},
-  {18, B11},
-  {26, UP},
-  {19, B12},
+  {5,  LEFT,  5, 0, 5},
+  {3,  DOWN,  5, 0, 5},
+  {4,  RIGHT, 5, 0, 5},
+  {2,  B1,    5, 0, 5},
+  {10, B2,    5, 0, 5},
+  {11, B3,    5, 0, 5},
+  {12, B4,    5, 0, 5},
+  {13, B5,    5, 0, 5},
+  {6,  B6,    5, 0, 5},
+  {7,  B7,    5, 0, 5},
+  {8,  B8,    5, 0, 5},
+  {9,  B9,    5, 0, 5},
+  {27, B10,   5, 0, 5},
+  {18, B11,   5, 0, 5},
+  {19, B12,   5, 0, 5},
+  {26, UP,    5, 0, 5},
   // no LEDs
-  {14, B13},
-  {21, B14},
-  {20, B15},
-  {16, B16},
-  {17, B17},
+  {14, B13,   0, 0, 0},
+  {21, B14,   0, 0, 0},
+  {20, B15,   0, 0, 0},
+  {16, B16,   0, 0, 0},
+  {17, B17,   0, 0, 0},
 };
 
 void init_btns() {
@@ -120,6 +120,13 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
     return ((uint32_t)(g) << 16) | ((uint32_t)(r) << 8) | (uint32_t)(b);
 }
 
+static inline void clear_leds(PIO pio, uint sm) {
+  for (int i = 0; i < LED_BTN_COUNT; ++i) {
+    pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
+  }
+  sleep_us(T_RESET_US);
+}
+
 int main(void) {
   board_init();
   tusb_init();
@@ -130,14 +137,15 @@ int main(void) {
   uint sm = 0;
   uint offset = pio_add_program(pio, &ws2812_program);
   ws2812_program_init(pio, sm, offset, LED_PIN, 800000, false);
-  // shut off all LEDs
-  for (int i = 0; i < LED_BTN_COUNT; ++i) {
-    pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
-  }
-  sleep_us(T_RESET_US);
 
-  for (int i = 0; i < LED_BTN_COUNT; ++i) {
-    pio_sm_put_blocking(pio, sm, urgb_u32(5, 0, 5) << 8);
+  clear_leds(pio, sm);
+
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    uint r, g, b;
+    r = BTN_MAP[i].r;
+    g = BTN_MAP[i].g;
+    b = BTN_MAP[i].b;
+    pio_sm_put_blocking(pio, sm, urgb_u32(r, g, b) << 8);
   }
   sleep_us(T_RESET_US);
 

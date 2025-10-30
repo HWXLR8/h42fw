@@ -38,6 +38,7 @@ typedef enum {
 typedef struct {
   uint pin;
   uint bit;
+  uint r, g, b;
 } button_map;
 
 // cardinal directions
