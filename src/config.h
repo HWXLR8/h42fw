@@ -1,10 +1,11 @@
 #pragma once
 
-#define BTN_COUNT     21
-#define LED_BTN_COUNT 16
-#define LED_PIN       28
-#define T_RESET_US    400
-#define BOOTSEL_PIN   14
+#define BTN_COUNT      21
+#define LED_BTN_COUNT  16
+#define LED_PIN        28
+#define LED_TOGGLE_PIN 21
+#define T_RESET_US     400
+#define BOOTSEL_PIN    14
 
 typedef enum {
   NEUTRAL,    // L+R = 0 or U+D = 0
@@ -48,4 +49,5 @@ typedef struct {
   uint up;
   uint down;
   uint64_t time;
-} cd_state;
+  uint led_toggle;
+} btn_state;

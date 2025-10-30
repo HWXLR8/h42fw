@@ -8,7 +8,8 @@
 
 #include "config.h"
 
-SOCD_MODE socd = LAST_INPUT;
+SOCD_MODE SOCD = LAST_INPUT;
+bool LED_STATE = true;
 
 static const button_map BTN_MAP[] = {
   {5,  LEFT,  5, 0, 5},
@@ -45,7 +46,42 @@ void init_btns() {
   }
 }
 
-static void check_bootsel_hold(void) {
+// reorder RGB -> GRB
+static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
+    return ((uint32_t)(g) << 16) | ((uint32_t)(r) << 8) | (uint32_t)(b);
+}
+
+static inline void leds_off(PIO pio, uint sm) {
+  for (int i = 0; i < LED_BTN_COUNT; ++i) {
+    pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
+  }
+  sleep_us(T_RESET_US);
+}
+
+static inline void leds_on(PIO pio, uint sm) {
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    uint r, g, b;
+    r = BTN_MAP[i].r;
+    g = BTN_MAP[i].g;
+    b = BTN_MAP[i].b;
+    pio_sm_put_blocking(pio, sm, urgb_u32(r, g, b) << 8);
+  }
+  sleep_us(T_RESET_US);
+}
+
+static inline void toggle_leds(PIO pio, uint sm) {
+  if (LED_STATE) {
+    leds_off(pio, sm);
+  } else {
+    leds_on(pio, sm);
+  }
+  LED_STATE = !LED_STATE;
+}
+
+static void process_live_config(btn_state* bstate,
+                                btn_state* prev_bstate,
+                                PIO pio, uint sm) {
+  //// BOOTSEL ////
   static bool was_low = false;
   static absolute_time_t t0;
 
@@ -63,13 +99,23 @@ static void check_bootsel_hold(void) {
   } else { // button was released
     was_low = false;
   }
+
+  //// LED TOGGLE ////
+  if (gpio_get(LED_TOGGLE_PIN) == 0) {
+    const uint was_pressed = prev_bstate->led_toggle;
+    if (!was_pressed) toggle_leds(pio, sm);
+    bstate->led_toggle = 1;
+  } else {
+    bstate->led_toggle = 0;
+  }
+  *prev_bstate = *bstate;
 }
 
 typedef struct __attribute__((packed)) {
   uint32_t buttons;  // bit0 -> bit20 for 21 btns
 } gamepad_report_t;
 
-static inline uint32_t read_buttons(cd_state* cd) {
+static inline uint32_t read_buttons(btn_state* bstate) {
   uint32_t mask = 0;
 
   for (int i = 0; i < BTN_COUNT; ++i) {
@@ -81,33 +127,33 @@ static inline uint32_t read_buttons(cd_state* cd) {
       mask |= (uint32_t)(1u << bit);
 
       // timestamp when pressed
-      if (bit == LEFT)  { if (cd->left  == 0) cd->left  = ++cd->time;}
-      if (bit == RIGHT) { if (cd->right == 0) cd->right = ++cd->time;}
-      if (bit == UP)    { if (cd->up    == 0) cd->up    = ++cd->time;}
-      if (bit == DOWN)  { if (cd->down  == 0) cd->down  = ++cd->time;}
+      if (bit == LEFT)  { if (bstate->left  == 0) bstate->left  = ++bstate->time;}
+      if (bit == RIGHT) { if (bstate->right == 0) bstate->right = ++bstate->time;}
+      if (bit == UP)    { if (bstate->up    == 0) bstate->up    = ++bstate->time;}
+      if (bit == DOWN)  { if (bstate->down  == 0) bstate->down  = ++bstate->time;}
     } else {
-      if (bit == LEFT)  cd->left  = 0;
-      if (bit == RIGHT) cd->right = 0;
-      if (bit == UP)    cd->up    = 0;
-      if (bit == DOWN)  cd->down  = 0;
+      if (bit == LEFT)  bstate->left  = 0;
+      if (bit == RIGHT) bstate->right = 0;
+      if (bit == UP)    bstate->up    = 0;
+      if (bit == DOWN)  bstate->down  = 0;
     }
   }
   // SOCD cleaning
-  if (socd == LAST_INPUT) {
-    if (cd->left && cd->right) {
-      if (cd->left < cd->right) mask &= ~(1 << LEFT);
+  if (SOCD == LAST_INPUT) {
+    if (bstate->left && bstate->right) {
+      if (bstate->left < bstate->right) mask &= ~(1 << LEFT);
       else mask &= ~(1 << RIGHT);
     }
-    if (cd->up && cd->down) {
-      if (cd->up < cd->down) mask &= ~(1 << UP);
+    if (bstate->up && bstate->down) {
+      if (bstate->up < bstate->down) mask &= ~(1 << UP);
       else mask &= ~(1 << DOWN);
     }
-  } else if (socd == NEUTRAL) {
-    if (cd->left && cd->right) {
+  } else if (SOCD == NEUTRAL) {
+    if (bstate->left && bstate->right) {
       mask &= ~(1 << LEFT);
       mask &= ~(1 << RIGHT);
     }
-    if (cd->up && cd->down) {
+    if (bstate->up && bstate->down) {
       mask &= ~(1 << UP);
       mask &= ~(1 << DOWN);
     }
@@ -115,49 +161,29 @@ static inline uint32_t read_buttons(cd_state* cd) {
   return mask;
 }
 
-// reorder RGB -> GRB
-static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
-    return ((uint32_t)(g) << 16) | ((uint32_t)(r) << 8) | (uint32_t)(b);
-}
-
-static inline void clear_leds(PIO pio, uint sm) {
-  for (int i = 0; i < LED_BTN_COUNT; ++i) {
-    pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
-  }
-  sleep_us(T_RESET_US);
-}
-
 int main(void) {
   board_init();
   tusb_init();
   init_btns();
 
-  // ws2812
+  // init LEDs
   PIO pio = pio0;
   uint sm = 0;
   uint offset = pio_add_program(pio, &ws2812_program);
   ws2812_program_init(pio, sm, offset, LED_PIN, 800000, false);
+  leds_off(pio, sm);
+  leds_on(pio,sm);
 
-  clear_leds(pio, sm);
-
-  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-    uint r, g, b;
-    r = BTN_MAP[i].r;
-    g = BTN_MAP[i].g;
-    b = BTN_MAP[i].b;
-    pio_sm_put_blocking(pio, sm, urgb_u32(r, g, b) << 8);
-  }
-  sleep_us(T_RESET_US);
-
-  cd_state cd = {0};
+  btn_state bstate = {0};
+  btn_state prev_bstate = {0};
   uint32_t prev = 0;
 
   while (true) {
     tud_task(); // TinyUSB device task
-    check_bootsel_hold();
+    process_live_config(&bstate, &prev_bstate, pio, sm);
 
     if (tud_hid_ready()) {
-      uint32_t curr = read_buttons(&cd);
+      uint32_t curr = read_buttons(&bstate);
       if (curr != prev) {
         gamepad_report_t rpt = {.buttons = curr};
         tud_hid_report(0, &rpt, sizeof(rpt)); // single report, no ID
