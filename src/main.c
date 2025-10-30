@@ -168,11 +168,6 @@ static inline uint32_t read_buttons(cd_state* cd) {
 static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
     return ((uint32_t)(g) << 16) | ((uint32_t)(r) << 8) | (uint32_t)(b);
 }
-// ???
-static void put_pixel(PIO pio, uint sm, uint32_t pixel_grb) {
-    // PIO program expects data left-justified
-    pio_sm_put_blocking(pio, sm, pixel_grb << 8);
-}
 
 int main(void) {
   board_init();
@@ -186,12 +181,12 @@ int main(void) {
   ws2812_program_init(pio, sm, offset, LED_PIN, 800000, IS_RGBW);
   // shut off all LEDs
   for (int i = 0; i < LED_BTN_COUNT; ++i) {
-    put_pixel(pio, sm, urgb_u32(0, 0, 0));
+    pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
   }
   sleep_us(T_RESET_US);
 
   for (int i = 0; i < LED_BTN_COUNT; ++i) {
-    put_pixel(pio, sm, urgb_u32(5, 0, 5));
+    pio_sm_put_blocking(pio, sm, urgb_u32(5, 0, 5) << 8);
   }
   sleep_us(T_RESET_US);
 
