@@ -16,6 +16,8 @@ target_include_directories(h42fw PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
 
 target_link_libraries(h42fw
     pico_stdlib
+    pico_multicore
+    pico_util
     tinyusb_device
     tinyusb_board
     hardware_gpio
