@@ -5,10 +5,9 @@
 #define LED_PIN         28
 #define LED_TOGGLE_PIN  21
 #define BOOTSEL_PIN     14
-#define BOOTSEL_DELAY   500000 // us
-#define LATCH_TIME      400    // us
-#define TAC_DEBOUNCE    500    // us
-#define KEY_DEBOUNCE    500    // us
+#define LATCH_TIME      400 // us
+#define TAC_DEBOUNCE    500 // us
+#define KEY_DEBOUNCE    500 // us
 
 typedef enum {
   NEUTRAL,    // L+R = 0 or U+D = 0
@@ -53,5 +52,4 @@ typedef struct {
   uint up;
   uint down;
   uint64_t time;
-  uint led_toggle;
 } btn_state;
