@@ -5,7 +5,7 @@
 #define LED_PIN         28
 #define LED_TOGGLE_PIN  21
 #define BOOTSEL_PIN     14
-#define LATCH_TIME      400 // us
+#define LATCH_TIME      350 // us
 #define TAC_DEBOUNCE    500 // us
 #define KEY_DEBOUNCE    500 // us
 
@@ -41,7 +41,8 @@ typedef enum {
 typedef struct {
   uint pin;
   uint bit;
-  uint r, g, b;
+  uint r, g, b; // idle color
+  uint rp, gp, bp; // pressed color
   uint debounce;
 } btn_cfg;
 
