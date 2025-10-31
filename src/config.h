@@ -43,7 +43,8 @@ typedef struct {
   uint pin;
   uint bit;
   uint r, g, b;
-} button_map;
+  uint debounce;
+} btn_cfg;
 
 // cardinal directions
 typedef struct {

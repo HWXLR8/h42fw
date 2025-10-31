@@ -11,35 +11,35 @@
 SOCD_MODE SOCD = LAST_INPUT;
 bool LED_STATE = true;
 
-static const button_map BTN_MAP[] = {
-  {5,  LEFT,  5, 0, 5},
-  {3,  DOWN,  5, 0, 5},
-  {4,  RIGHT, 5, 0, 5},
-  {2,  B1,    5, 0, 5},
-  {10, B2,    5, 0, 5},
-  {11, B3,    5, 0, 5},
-  {12, B4,    5, 0, 5},
-  {13, B5,    5, 0, 5},
-  {6,  B6,    5, 0, 5},
-  {7,  B7,    5, 0, 5},
-  {8,  B8,    5, 0, 5},
-  {9,  B9,    5, 0, 5},
-  {27, B10,   5, 0, 5},
-  {18, B11,   5, 0, 5},
-  {19, B12,   5, 0, 5},
-  {26, UP,    5, 0, 5},
+static const btn_cfg BTN_CFG[] = {
+  {5,  LEFT,  5, 0, 5, KEY_DEBOUNCE},
+  {3,  DOWN,  5, 0, 5, KEY_DEBOUNCE},
+  {4,  RIGHT, 5, 0, 5, KEY_DEBOUNCE},
+  {2,  B1,    5, 0, 5, KEY_DEBOUNCE},
+  {10, B2,    5, 0, 5, KEY_DEBOUNCE},
+  {11, B3,    5, 0, 5, KEY_DEBOUNCE},
+  {12, B4,    5, 0, 5, KEY_DEBOUNCE},
+  {13, B5,    5, 0, 5, KEY_DEBOUNCE},
+  {6,  B6,    5, 0, 5, KEY_DEBOUNCE},
+  {7,  B7,    5, 0, 5, KEY_DEBOUNCE},
+  {8,  B8,    5, 0, 5, KEY_DEBOUNCE},
+  {9,  B9,    5, 0, 5, KEY_DEBOUNCE},
+  {27, B10,   5, 0, 5, KEY_DEBOUNCE},
+  {18, B11,   5, 0, 5, KEY_DEBOUNCE},
+  {19, B12,   5, 0, 5, KEY_DEBOUNCE},
+  {26, UP,    5, 0, 5, KEY_DEBOUNCE},
   // no LEDs
-  {14, B13,   0, 0, 0},
-  {21, B14,   0, 0, 0},
-  {20, B15,   0, 0, 0},
-  {16, B16,   0, 0, 0},
-  {17, B17,   0, 0, 0},
+  {14, B13,   0, 0, 0, TAC_DEBOUNCE},
+  {21, B14,   0, 0, 0, TAC_DEBOUNCE},
+  {20, B15,   0, 0, 0, TAC_DEBOUNCE},
+  {16, B16,   0, 0, 0, TAC_DEBOUNCE},
+  {17, B17,   0, 0, 0, TAC_DEBOUNCE},
 };
 
 void init_btns() {
   // enable inputs w/ pull ups
   for (uint i = 0; i < BTN_COUNT; ++i) {
-    uint p = BTN_MAP[i].pin;
+    uint p = BTN_CFG[i].pin;
     gpio_init(p);
     gpio_pull_up(p);
     gpio_set_dir(p, GPIO_IN);
@@ -61,9 +61,9 @@ static inline void leds_off(PIO pio, uint sm) {
 static inline void leds_on(PIO pio, uint sm) {
   for (uint i = 0; i < LED_BTN_COUNT; ++i) {
     uint r, g, b;
-    r = BTN_MAP[i].r;
-    g = BTN_MAP[i].g;
-    b = BTN_MAP[i].b;
+    r = BTN_CFG[i].r;
+    g = BTN_CFG[i].g;
+    b = BTN_CFG[i].b;
     pio_sm_put_blocking(pio, sm, urgb_u32(r, g, b) << 8);
   }
   sleep_us(LATCH_TIME);
@@ -98,7 +98,7 @@ static inline bool is_pressed(uint pin, int idx) {
   }
 
   if (!pressed && was_pressed[idx]) {
-    unlock_time[idx] = delayed_by_us(now, TAC_DEBOUNCE);
+    unlock_time[idx] = delayed_by_us(now, BTN_CFG[idx].debounce);
     is_stable[idx] = false;
   }
 
@@ -111,8 +111,8 @@ static inline uint32_t read_buttons(btn_state* bstate, PIO pio, uint sm) {
   static bool led_toggle_pressed = false;
 
   for (int i = 0; i < BTN_COUNT; ++i) {
-    const uint bit = BTN_MAP[i].bit;
-    const uint p = BTN_MAP[i].pin;
+    const uint bit = BTN_CFG[i].bit;
+    const uint p = BTN_CFG[i].pin;
     bool pressed = is_pressed(p, i);
 
     if (pressed) {

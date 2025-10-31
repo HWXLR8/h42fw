@@ -5,17 +5,16 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 
 ### Feature list
 
-| Feature          | State | Notes                    |                                                     
-|------------------|:-----:|--------------------------|                                                     
-| HID Gamepad      | ✅    | Tested on Linux.         |                                                     
-| HID Keyboard     | ❌    |                          |                                              
-| XInput           | ❌    |                          |
-| 1000Hz Polling   | ✅    |                          |                                                     
-| Button Remap     | ✅    |                          |  
-| Button Debounce  | ✅    | Leading-edge debounce.   |  
-| SOCD Cleaning    | ⚠️    | Only Neutral/Last-input. |                                                    
-| LED Support      | ✅    | Per-button LED config.   |                                                     
-| LED Animations   | ❌    |                          |                                                     
-| LED Brightness   | ⚠️    | Only on/off toggle.      |                                                     
-| OLED Support     | ❌    |                          |                                                     
-| Console Support  | ❌    |                          |     
+| Feature          | State | Notes                                  |
+|:-----------------|:-----:|:---------------------------------------|
+| HID Gamepad      | ✅    | Tested on Linux.                       |
+| HID Keyboard     | ❌    |                                        |
+| XInput           | ❌    |                                        |
+| 1000Hz Polling   | ✅    |                                        |
+| Button Remap     | ✅    |                                        |
+| Button Debounce  | ✅    | Leading-edge, configurable per-button. |
+| SOCD Cleaning    | ⚠️    | Only Neutral/Last-input.                |
+| LED Support      | ✅    | Per-button LED config.                 |
+| LED Brightness   | ⚠️    | Only on/off toggle.                     |
+| OLED Support     | ❌    |                                        |
+| Console Support  | ❌    |                                        |
