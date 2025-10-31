@@ -55,7 +55,7 @@ static inline void leds_off(PIO pio, uint sm) {
   for (int i = 0; i < LED_BTN_COUNT; ++i) {
     pio_sm_put_blocking(pio, sm, urgb_u32(0, 0, 0) << 8);
   }
-  sleep_us(T_RESET_US);
+  sleep_us(LATCH_TIME);
 }
 
 static inline void leds_on(PIO pio, uint sm) {
@@ -66,7 +66,7 @@ static inline void leds_on(PIO pio, uint sm) {
     b = BTN_MAP[i].b;
     pio_sm_put_blocking(pio, sm, urgb_u32(r, g, b) << 8);
   }
-  sleep_us(T_RESET_US);
+  sleep_us(LATCH_TIME);
 }
 
 static inline void toggle_leds(PIO pio, uint sm) {
@@ -78,9 +78,7 @@ static inline void toggle_leds(PIO pio, uint sm) {
   LED_STATE = !LED_STATE;
 }
 
-static void process_live_config(btn_state* bstate,
-                                btn_state* prev_bstate,
-                                PIO pio, uint sm) {
+static void process_live_config(PIO pio, uint sm) {
   //// BOOTSEL ////
   static bool was_low = false;
   static absolute_time_t t0;
@@ -91,8 +89,7 @@ static void process_live_config(btn_state* bstate,
       was_low = true;
       t0 = get_absolute_time();
     } else {
-      // 5s elapsed?
-      if (absolute_time_diff_us(t0, get_absolute_time()) >= 500000) {
+      if (absolute_time_diff_us(t0, get_absolute_time()) >= BOOTSEL_DELAY) {
         reset_usb_boot(0, 0);
       }
     }
@@ -101,14 +98,25 @@ static void process_live_config(btn_state* bstate,
   }
 
   //// LED TOGGLE ////
-  if (gpio_get(LED_TOGGLE_PIN) == 0) {
-    const uint was_pressed = prev_bstate->led_toggle;
-    if (!was_pressed) toggle_leds(pio, sm);
-    bstate->led_toggle = 1;
-  } else {
-    bstate->led_toggle = 0;
+  static bool was_pressed = false;
+  // next time a press is allowed
+  static absolute_time_t unlock_time = {0};
+  bool pressed = (gpio_get(LED_TOGGLE_PIN) == 0);
+  absolute_time_t now = get_absolute_time();
+
+  // accept first input
+  if (pressed &&
+      !was_pressed &&
+      absolute_time_diff_us(now, unlock_time) <= 0) {
+    toggle_leds(pio, sm);
   }
-  *prev_bstate = *bstate;
+
+  // on release, wait for debounce
+  if (!pressed && was_pressed) {
+    unlock_time = delayed_by_us(now, TAC_DEBOUNCE);
+  }
+
+  was_pressed = pressed;
 }
 
 typedef struct __attribute__((packed)) {
@@ -121,9 +129,10 @@ static inline uint32_t read_buttons(btn_state* bstate) {
   for (int i = 0; i < BTN_COUNT; ++i) {
     const uint bit = BTN_MAP[i].bit;
     const uint p   = BTN_MAP[i].pin;
+    bool pressed = !gpio_get(p);
 
     // if button pressed (active low)
-    if (!gpio_get(p)) {
+    if (pressed) {
       mask |= (uint32_t)(1u << bit);
 
       // timestamp when pressed
@@ -175,12 +184,11 @@ int main(void) {
   leds_on(pio,sm);
 
   btn_state bstate = {0};
-  btn_state prev_bstate = {0};
   uint32_t prev = 0;
 
   while (true) {
     tud_task(); // TinyUSB device task
-    process_live_config(&bstate, &prev_bstate, pio, sm);
+    process_live_config(pio, sm);
 
     if (tud_hid_ready()) {
       uint32_t curr = read_buttons(&bstate);
