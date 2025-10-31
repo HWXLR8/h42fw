@@ -184,19 +184,18 @@ int main(void) {
   leds_on(pio,sm);
 
   btn_state bstate = {0};
-  uint32_t prev = 0;
+  uint32_t prev_bmask = 0;
 
   while (true) {
-    tud_task(); // TinyUSB device task
+    tud_task();
     process_live_config(pio, sm);
 
-    if (tud_hid_ready()) {
-      uint32_t curr = read_buttons(&bstate);
-      if (curr != prev) {
-        gamepad_report_t rpt = {.buttons = curr};
-        tud_hid_report(0, &rpt, sizeof(rpt)); // single report, no ID
-        prev = curr;
-      }
+    uint32_t bmask = read_buttons(&bstate);
+
+    if (tud_hid_ready() && bmask != prev_bmask) {
+      gamepad_report_t rpt = {.buttons = bmask};
+      tud_hid_report(0, &rpt, sizeof(rpt));
+      prev_bmask = bmask;
     }
   }
   return 0;
