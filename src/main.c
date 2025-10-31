@@ -78,26 +78,6 @@ static inline void toggle_leds(PIO pio, uint sm) {
   LED_STATE = !LED_STATE;
 }
 
-static void process_live_config(PIO pio, uint sm) {
-  //// BOOTSEL ////
-  static bool was_low = false;
-  static absolute_time_t t0;
-
-  bool low = (gpio_get(BOOTSEL_PIN) == 0) ;
-  if (low) { // button currently held
-    if (!was_low) {
-      was_low = true;
-      t0 = get_absolute_time();
-    } else {
-      if (absolute_time_diff_us(t0, get_absolute_time()) >= BOOTSEL_DELAY) {
-        reset_usb_boot(0, 0);
-      }
-    }
-  } else { // button was released
-    was_low = false;
-  }
-}
-
 typedef struct __attribute__((packed)) {
   uint32_t buttons;  // bit0 -> bit20 for 21 btns
 } gamepad_report_t;
@@ -144,12 +124,16 @@ static inline uint32_t read_buttons(btn_state* bstate, PIO pio, uint sm) {
       if (bit == UP)    { if (bstate->up    == 0) bstate->up    = ++bstate->time;}
       if (bit == DOWN)  { if (bstate->down  == 0) bstate->down  = ++bstate->time;}
 
+      // LED toggle
       if (p == LED_TOGGLE_PIN) {
         if (!led_toggle_pressed) {
           toggle_leds(pio, sm);
         }
         led_toggle_pressed = true;
       }
+
+      // BOOTSEL
+      if (p == BOOTSEL_PIN) reset_usb_boot(0, 0);
     } else {
       if (bit == LEFT)  bstate->left  = 0;
       if (bit == RIGHT) bstate->right = 0;
@@ -199,10 +183,7 @@ int main(void) {
 
   while (true) {
     tud_task();
-    process_live_config(pio, sm);
-
     uint32_t bmask = read_buttons(&bstate, pio, sm);
-
     if (tud_hid_ready() && bmask != prev_bmask) {
       gamepad_report_t rpt = {.buttons = bmask};
       tud_hid_report(0, &rpt, sizeof(rpt));
