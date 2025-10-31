@@ -13,8 +13,9 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 | 1000Hz Polling   | ✅    |                                        |
 | Button Remap     | ✅    |                                        |
 | Button Debounce  | ✅    | Leading-edge, configurable per-button. |
-| SOCD Cleaning    | ⚠️    | Only Neutral/Last-input.                |
+| SOCD Cleaning    | ⚠️    | Only Neutral/Last-input.               |
 | LED Support      | ✅    | Per-button LED config.                 |
-| LED Brightness   | ⚠️    | Only on/off toggle.                     |
+| LED Brightness   | ⚠️    | Only on/off toggle.                    |
+| LED Animations   | ❌    |                                        |
 | OLED Support     | ❌    |                                        |
 | Console Support  | ❌    |                                        |
