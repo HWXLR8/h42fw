@@ -96,42 +96,45 @@ static void process_live_config(PIO pio, uint sm) {
   } else { // button was released
     was_low = false;
   }
-
-  //// LED TOGGLE ////
-  static bool was_pressed = false;
-  // next time a press is allowed
-  static absolute_time_t unlock_time = {0};
-  bool pressed = (gpio_get(LED_TOGGLE_PIN) == 0);
-  absolute_time_t now = get_absolute_time();
-
-  // accept first input
-  if (pressed &&
-      !was_pressed &&
-      absolute_time_diff_us(now, unlock_time) <= 0) {
-    toggle_leds(pio, sm);
-  }
-
-  // on release, wait for debounce
-  if (!pressed && was_pressed) {
-    unlock_time = delayed_by_us(now, TAC_DEBOUNCE);
-  }
-
-  was_pressed = pressed;
 }
 
 typedef struct __attribute__((packed)) {
   uint32_t buttons;  // bit0 -> bit20 for 21 btns
 } gamepad_report_t;
 
-static inline uint32_t read_buttons(btn_state* bstate) {
+static inline bool is_pressed(uint pin, int idx) {
+  static bool is_stable[BTN_COUNT];
+  static bool was_pressed[BTN_COUNT];
+  // next time a press is allowed
+  static absolute_time_t unlock_time[BTN_COUNT];
+
+  bool pressed = (gpio_get(pin) == 0);
+  absolute_time_t now = get_absolute_time();
+
+  // accept first input
+  if (pressed &&
+      absolute_time_diff_us(now, unlock_time[idx]) <= 0) {
+    is_stable[idx] = true;
+  }
+
+  if (!pressed && was_pressed[idx]) {
+    unlock_time[idx] = delayed_by_us(now, TAC_DEBOUNCE);
+    is_stable[idx] = false;
+  }
+
+  was_pressed[idx] = pressed;
+  return is_stable[idx];
+}
+
+static inline uint32_t read_buttons(btn_state* bstate, PIO pio, uint sm) {
   uint32_t mask = 0;
+  static bool led_toggle_pressed = false;
 
   for (int i = 0; i < BTN_COUNT; ++i) {
     const uint bit = BTN_MAP[i].bit;
-    const uint p   = BTN_MAP[i].pin;
-    bool pressed = !gpio_get(p);
+    const uint p = BTN_MAP[i].pin;
+    bool pressed = is_pressed(p, i);
 
-    // if button pressed (active low)
     if (pressed) {
       mask |= (uint32_t)(1u << bit);
 
@@ -140,11 +143,19 @@ static inline uint32_t read_buttons(btn_state* bstate) {
       if (bit == RIGHT) { if (bstate->right == 0) bstate->right = ++bstate->time;}
       if (bit == UP)    { if (bstate->up    == 0) bstate->up    = ++bstate->time;}
       if (bit == DOWN)  { if (bstate->down  == 0) bstate->down  = ++bstate->time;}
+
+      if (p == LED_TOGGLE_PIN) {
+        if (!led_toggle_pressed) {
+          toggle_leds(pio, sm);
+        }
+        led_toggle_pressed = true;
+      }
     } else {
       if (bit == LEFT)  bstate->left  = 0;
       if (bit == RIGHT) bstate->right = 0;
       if (bit == UP)    bstate->up    = 0;
       if (bit == DOWN)  bstate->down  = 0;
+      if (p == LED_TOGGLE_PIN) led_toggle_pressed = false;
     }
   }
   // SOCD cleaning
@@ -190,7 +201,7 @@ int main(void) {
     tud_task();
     process_live_config(pio, sm);
 
-    uint32_t bmask = read_buttons(&bstate);
+    uint32_t bmask = read_buttons(&bstate, pio, sm);
 
     if (tud_hid_ready() && bmask != prev_bmask) {
       gamepad_report_t rpt = {.buttons = bmask};
