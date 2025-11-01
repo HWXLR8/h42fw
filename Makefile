@@ -1,6 +1,7 @@
 PICOTOOL_PATH := ./picotool
 PICO_SDK_PATH := ./pico-sdk
-BIN := build/h42fw.uf2
+UF2 := build/h42fw.uf2
+BIN := build/h42fw.bin
 
 all: build
 
@@ -14,7 +15,9 @@ build: config
 	cmake --build build -j
 
 flash: build
-	$(PICOTOOL_PATH) load -v -x $(BIN)
+	@bytes=$$(wc -c < $(BIN)); \
+	printf "\n\033[1;35m=== BIN SIZE: %s BYTES ===\033[0m\n\n" $$bytes 1>&2
+	$(PICOTOOL_PATH) load -v -x $(UF2)
 
 clean:
 	rm -rf build
