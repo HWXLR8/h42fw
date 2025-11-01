@@ -1,4 +1,5 @@
 #include "tusb.h"
+#include "config.h"
 
 /* ---------------- Device descriptor ---------------- */
 tusb_desc_device_t const desc_device = {
@@ -9,8 +10,8 @@ tusb_desc_device_t const desc_device = {
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
-    .idVendor  = 0xCafe,
-    .idProduct = 0x4000,
+    .idVendor  = VENDOR_ID,
+    .idProduct = PRODUCT_ID,
     .bcdDevice = 0x0100,
     .iManufacturer = 0x01,
     .iProduct      = 0x02,
@@ -69,10 +70,10 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
 
 /* ---------------- Strings ---------------- */
 static char const* string_desc[] = {
-  (const char[]) { 0x09, 0x04 },     // 0: LangID = English (0x0409)
-  "beef",                            // 1: Manufacturer
-  "beefpad",                         // 2: Product
-  "696969",                          // 3: Serial
+  (const char[]) { 0x09, 0x04 }, // 0: LangID = English (0x0409)
+  MANUFACTURER,
+  PRODUCT,
+  SERIAL_NUM,
 };
 
 static uint16_t _desc_str[32];

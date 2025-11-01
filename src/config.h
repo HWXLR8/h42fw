@@ -9,6 +9,12 @@
 #define TAC_DEBOUNCE    500 // us
 #define KEY_DEBOUNCE    500 // us
 
+#define VENDOR_ID    0xBEEF
+#define PRODUCT_ID   0xFEEF
+#define MANUFACTURER "SEGV"
+#define PRODUCT      "BEEFPAD"
+#define SERIAL_NUM   "00000000"
+
 typedef enum {
   NEUTRAL,    // L+R = 0 or U+D = 0
   LAST_INPUT, // last input wins
