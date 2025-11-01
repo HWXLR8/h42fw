@@ -8,6 +8,7 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
+#include "main.h"
 #include "oled.h"
 #include "config.h"
 

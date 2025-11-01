@@ -1,10 +1,10 @@
-#include "oled.h"
-
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
 
 #include <string.h>
 
+#include "oled.h"
+#include "config.h"
 #include "font/font5x7.h"
 
 static inline void oled_write_cmd(uint8_t cmd) {
