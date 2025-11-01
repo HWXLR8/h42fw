@@ -8,6 +8,7 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
+#include "oled.h"
 #include "config.h"
 
 SOCD_MODE SOCD = LAST_INPUT;
@@ -131,6 +132,13 @@ int main(void) {
   board_init();
   tusb_init();
   init_btns();
+
+  oled_init();
+  oled_clear();
+  oled_print(0, 0, "BEATMANIA IS NOT COOL");
+  oled_print(1, 0, "IT'S NOT FUN");
+  oled_print(2, 0, "IT'S NOT FRESH");
+  oled_print(3, 0, "IT'S NOT GOOD");
 
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
