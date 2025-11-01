@@ -10,6 +10,7 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 | HID Gamepad      | ✅    | Tested on Linux.                            |
 | HID Keyboard     | ❌    |                                             |
 | XInput           | ❌    |                                             |
+| Console Support  | ❌    |                                             |
 | 1000Hz Polling   | ✅    |                                             |
 | Button Remap     | ✅    |                                             |
 | Button Debounce  | ✅    | Leading-edge, configurable per-button.      |
@@ -17,5 +18,6 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 | LED Support      | ✅    | Per-button LED config for idle/press color. |
 | LED Brightness   | ⚠️    | Only on/off toggle.                         |
 | LED Animations   | ⚠️    | Button illumination on press.               |
-| OLED Support     | ❌    |                                             |
-| Console Support  | ❌    |                                             |
+| OLED Support     | ✅    | Text rendering only.                        |
+| OLED Images      | ❌    |                                             |
+| OLED Animations  | ❌    |                                             |
