@@ -8,6 +8,7 @@ pico_sdk_init()
 
 add_executable(h42fw
     src/main.c
+    src/oled.c
     src/usb_descriptors.c
 )
 set_target_properties(h42fw PROPERTIES SUFFIX ".elf")
@@ -22,6 +23,7 @@ target_link_libraries(h42fw
     tinyusb_board
     hardware_gpio
     hardware_pio
+    hardware_i2c
 )
 
 pico_enable_stdio_usb(h42fw 1)
