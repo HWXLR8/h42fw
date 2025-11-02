@@ -179,6 +179,97 @@ static inline bool same_frame(const led_frame* a, const led_frame* b) {
   return memcmp(a, b, sizeof(*a)) == 0;
 }
 
+static inline uint32_t read_buttons(bool* pressed_led) {
+  static btn_state bstate = {0};
+  static bool held[BTN_COUNT] = {0};
+  uint32_t bmask = 0;
+
+  for (uint i = 0; i < BTN_COUNT; ++i) {
+    const uint bit = BTN_CFG[i].bit;
+    const uint p   = BTN_CFG[i].pin;
+    bool pressed = is_pressed(BTN_CFG[i].pin, i);
+
+    if (pressed) {
+      bmask |= (1u << BTN_CFG[i].bit);
+      if (i < LED_BTN_COUNT) pressed_led[i] = true;
+
+      // timestamp when pressed
+      if (bit == LEFT)  { if (bstate.left  == 0) bstate.left  = ++bstate.time;}
+      if (bit == RIGHT) { if (bstate.right == 0) bstate.right = ++bstate.time;}
+      if (bit == UP)    { if (bstate.up    == 0) bstate.up    = ++bstate.time;}
+      if (bit == DOWN)  { if (bstate.down  == 0) bstate.down  = ++bstate.time;}
+
+      // LED toggle
+      if (p == LED_TOGGLE_PIN) {
+        if (!held[i]) {
+          multicore_fifo_push_timeout_us(CMD_TOGGLE_LEDS, 0);
+        }
+        held[i] = true;
+      }
+
+      // OLED toggle
+      if (p == OLED_TOGGLE_PIN) {
+        if (!held[i]) {
+          multicore_fifo_push_timeout_us(CMD_TOGGLE_OLED, 0);
+        }
+        held[i] = true;
+      }
+
+      // BOOTSEL
+      if (p == BOOTSEL_PIN) reset_usb_boot(0, 0);
+
+    } else {
+      if (bit == LEFT)  bstate.left  = 0;
+      if (bit == RIGHT) bstate.right = 0;
+      if (bit == UP)    bstate.up    = 0;
+      if (bit == DOWN)  bstate.down  = 0;
+      if (p == LED_TOGGLE_PIN) held[i] = false;
+      if (p == OLED_TOGGLE_PIN) held[i] = false;
+    }
+  }
+
+  // SOCD cleaning
+  if (SOCD == LAST_INPUT) {
+    if (bstate.left && bstate.right) {
+      if (bstate.left < bstate.right) bmask &= ~(1 << LEFT);
+      else bmask &= ~(1 << RIGHT);
+    }
+    if (bstate.up && bstate.down) {
+      if (bstate.up < bstate.down) bmask &= ~(1 << UP);
+      else bmask &= ~(1 << DOWN);
+    }
+  } else if (SOCD == NEUTRAL) {
+    if (bstate.left && bstate.right) {
+      bmask &= ~(1 << LEFT);
+      bmask &= ~(1 << RIGHT);
+    }
+    if (bstate.up && bstate.down) {
+      bmask &= ~(1 << UP);
+      bmask &= ~(1 << DOWN);
+    }
+  }
+
+  // get hat bits
+  uint32_t dir = bmask & ((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) | (1u<<LEFT));
+  uint8_t hat = 0x0F; // neutral (Null)
+  bool up    = dir & (1u<<UP);
+  bool right = dir & (1u<<RIGHT);
+  bool down  = dir & (1u<<DOWN);
+  bool left  = dir & (1u<<LEFT);
+  if (up && right) hat = 1;
+  else if (down && right) hat = 3;
+  else if (down && left) hat = 5;
+  else if (up && left) hat = 7;
+  else if (up) hat = 0;
+  else if (right) hat = 2;
+  else if (down) hat = 4;
+  else if (left) hat = 6;
+  // remove dpad from buttons, then insert hat at bits 21..24
+  uint32_t bits = bmask & ~((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) |(1u<<LEFT));
+  bits |= ((uint32_t)(hat & 0x0F)) << 21;
+  return bits;
+}
+
 int main(void) {
   board_init();
   tusb_init();
@@ -187,101 +278,15 @@ int main(void) {
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
 
-  btn_state   bstate = {0};
-  uint32_t    prev_bits = 0;
-  bool        pressed_led[LED_BTN_COUNT] = {0};
-  static bool held[BTN_COUNT] = {0};
-  led_frame   last_sent = {0};
+  bool pressed_led[LED_BTN_COUNT] = {0};
+  uint32_t prev_bits = 0;
+  led_frame last_sent = {0};
 
   while (true) {
     tud_task();
 
-    // scan buttons, returns mask + leds pressed
     memset(pressed_led, 0, sizeof(pressed_led));
-    uint32_t bmask = 0;
-
-    for (uint i = 0; i < BTN_COUNT; ++i) {
-      const uint bit = BTN_CFG[i].bit;
-      const uint p   = BTN_CFG[i].pin;
-      bool pressed = is_pressed(BTN_CFG[i].pin, i);
-
-      if (pressed) {
-        bmask |= (1u << BTN_CFG[i].bit);
-        if (i < LED_BTN_COUNT) pressed_led[i] = true;
-
-        // timestamp when pressed
-        if (bit == LEFT)  { if (bstate.left  == 0) bstate.left  = ++bstate.time;}
-        if (bit == RIGHT) { if (bstate.right == 0) bstate.right = ++bstate.time;}
-        if (bit == UP)    { if (bstate.up    == 0) bstate.up    = ++bstate.time;}
-        if (bit == DOWN)  { if (bstate.down  == 0) bstate.down  = ++bstate.time;}
-
-        // LED toggle
-        if (p == LED_TOGGLE_PIN) {
-          if (!held[i]) {
-            multicore_fifo_push_timeout_us(CMD_TOGGLE_LEDS, 0);
-          }
-          held[i] = true;
-        }
-
-        // OLED toggle
-        if (p == OLED_TOGGLE_PIN) {
-          if (!held[i]) {
-            multicore_fifo_push_timeout_us(CMD_TOGGLE_OLED, 0);
-          }
-          held[i] = true;
-        }
-
-        // BOOTSEL
-        if (p == BOOTSEL_PIN) reset_usb_boot(0, 0);
-
-      } else {
-        if (bit == LEFT)  bstate.left  = 0;
-        if (bit == RIGHT) bstate.right = 0;
-        if (bit == UP)    bstate.up    = 0;
-        if (bit == DOWN)  bstate.down  = 0;
-        if (p == LED_TOGGLE_PIN) held[i] = false;
-        if (p == OLED_TOGGLE_PIN) held[i] = false;
-      }
-    }
-    // SOCD cleaning
-    if (SOCD == LAST_INPUT) {
-      if (bstate.left && bstate.right) {
-        if (bstate.left < bstate.right) bmask &= ~(1 << LEFT);
-        else bmask &= ~(1 << RIGHT);
-      }
-      if (bstate.up && bstate.down) {
-        if (bstate.up < bstate.down) bmask &= ~(1 << UP);
-        else bmask &= ~(1 << DOWN);
-      }
-    } else if (SOCD == NEUTRAL) {
-      if (bstate.left && bstate.right) {
-        bmask &= ~(1 << LEFT);
-        bmask &= ~(1 << RIGHT);
-      }
-      if (bstate.up && bstate.down) {
-        bmask &= ~(1 << UP);
-        bmask &= ~(1 << DOWN);
-      }
-    }
-
-    // get hat bits
-    uint32_t dir = bmask & ((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) | (1u<<LEFT));
-    uint8_t hat = 0x0F; // neutral (Null)
-    bool up    = dir & (1u<<UP);
-    bool right = dir & (1u<<RIGHT);
-    bool down  = dir & (1u<<DOWN);
-    bool left  = dir & (1u<<LEFT);
-    if (up && right) hat = 1;
-    else if (down && right) hat = 3;
-    else if (down && left) hat = 5;
-    else if (up && left) hat = 7;
-    else if (up) hat = 0;
-    else if (right) hat = 2;
-    else if (down) hat = 4;
-    else if (left) hat = 6;
-    // remove dpad from buttons, then insert hat at bits 21..24
-    uint32_t bits = bmask & ~((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) |(1u<<LEFT));
-    bits |= ((uint32_t)(hat & 0x0F)) << 21;
+    uint32_t bits = read_buttons(pressed_led);
 
     // send HID report
     if (tud_hid_ready() && bits != prev_bits) {
