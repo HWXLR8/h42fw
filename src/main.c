@@ -12,6 +12,15 @@
 #include "oled.h"
 #include "config.h"
 
+SOCD_MODE SOCD = LAST_INPUT;
+
+typedef enum {
+  CMD_NONE = 0,
+  CMD_TOGGLE_OLED = 1,
+  CMD_TOGGLE_LEDS = 2,
+} fifo_cmd;
+
+
 static const btn_cfg BTN_CFG[] = {
   /*
    pin    button   idle RGB   press RGB   debounce time */
@@ -87,6 +96,18 @@ typedef struct {
 static queue_t ledq;
 
 static void core1_main() {
+  bool leds_on = true;
+  bool oled_on = true;
+  led_frame fcache = {0};
+
+  // init oled
+  oled_init();
+  oled_clear();
+  oled_print(0, 0, "BEATMANIA IS NOT COOL");
+  oled_print(1, 0, "IT'S NOT FUN");
+  oled_print(2, 0, "IT'S NOT FRESH");
+  oled_print(3, 0, "IT'S NOT GOOD");
+
   // init LEDs
   PIO pio = pio0;
   uint sm = 0;
@@ -95,34 +116,64 @@ static void core1_main() {
 
   led_frame f;
   while (true) {
-    queue_remove_blocking(&ledq, &f);
-
-    for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-      // convert RGB -> GRB
-      uint32_t color = ((uint32_t)f.rgb[i][1] << 16)
-        | ((uint32_t)f.rgb[i][0] << 8)
-        | (uint32_t)f.rgb[i][2];
-      pio_sm_put_blocking(pio, sm , color << 8);
+    // drain FIFO
+    while (multicore_fifo_rvalid()) {
+      uint32_t cmd = multicore_fifo_pop_blocking();
+      if (cmd == CMD_TOGGLE_OLED) {
+        oled_sleep(oled_on);
+        oled_on = !oled_on;
+      } else if (cmd == CMD_TOGGLE_LEDS) {
+        leds_on = !leds_on;
+        // shut off LEDs
+        if (!leds_on) {
+          for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+            pio_sm_put_blocking(pio, sm, 0);
+          }
+          sleep_us(LATCH_TIME);
+        } else {
+          // restore from cache
+          for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+            uint32_t color =
+              ((uint32_t)fcache.rgb[i][1] << 16) |
+              ((uint32_t)fcache.rgb[i][0] << 8)  |
+              (uint32_t) fcache.rgb[i][2];
+            pio_sm_put_blocking(pio, sm, color << 8);
+          }
+          sleep_us(LATCH_TIME);
+        }
+      }
     }
-    sleep_us(LATCH_TIME);
+
+    if (queue_try_remove(&ledq, &f)) {
+      // cache the frame
+      fcache = f;
+      for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+        uint8_t r = leds_on ? f.rgb[i][0] : 0;
+        uint8_t g = leds_on ? f.rgb[i][1] : 0;
+        uint8_t b = leds_on ? f.rgb[i][2] : 0;
+        uint32_t color = ((uint32_t)g << 16) | ((uint32_t)r << 8) | (uint32_t)b;
+        pio_sm_put_blocking(pio, sm, color << 8);
+      }
+      sleep_us(LATCH_TIME);
+    }
   }
 }
 
 static inline void build_led_frame(led_frame* out, const bool pressed[]) {
-  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-    uint8_t r = BTN_CFG[i].r;
-    uint8_t g = BTN_CFG[i].g;
-    uint8_t b = BTN_CFG[i].b;
-    if (pressed[i]) {
-      r = BTN_CFG[i].rp;
-      g = BTN_CFG[i].gp;
-      b = BTN_CFG[i].bp;
+    for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+      uint8_t r = BTN_CFG[i].r;
+      uint8_t g = BTN_CFG[i].g;
+      uint8_t b = BTN_CFG[i].b;
+      if (pressed[i]) {
+        r = BTN_CFG[i].rp;
+        g = BTN_CFG[i].gp;
+        b = BTN_CFG[i].bp;
+      }
+      out->rgb[i][0] = r;
+      out->rgb[i][1] = g;
+      out->rgb[i][2] = b;
     }
-    out->rgb[i][0] = r;
-    out->rgb[i][1] = g;
-    out->rgb[i][2] = b;
   }
-}
 
 static inline bool same_frame(const led_frame* a, const led_frame* b) {
   return memcmp(a, b, sizeof(*a)) == 0;
@@ -133,20 +184,8 @@ int main(void) {
   tusb_init();
   init_btns();
 
-  // oled
-  oled_init();
-  oled_clear();
-  oled_print(0, 0, "BEATMANIA IS NOT COOL");
-  oled_print(1, 0, "IT'S NOT FUN");
-  oled_print(2, 0, "IT'S NOT FRESH");
-  oled_print(3, 0, "IT'S NOT GOOD");
-
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
-
-  SOCD_MODE SOCD = LAST_INPUT;
-  bool LEDS_ON = true;
-  bool OLED_ON = true;
 
   btn_state   bstate = {0};
   uint32_t    prev_bits = 0;
@@ -179,7 +218,7 @@ int main(void) {
         // LED toggle
         if (p == LED_TOGGLE_PIN) {
           if (!held[i]) {
-            LEDS_ON = !LEDS_ON;
+            multicore_fifo_push_timeout_us(CMD_TOGGLE_LEDS, 0);
           }
           held[i] = true;
         }
@@ -187,8 +226,7 @@ int main(void) {
         // OLED toggle
         if (p == OLED_TOGGLE_PIN) {
           if (!held[i]) {
-            oled_sleep(OLED_ON); // TODO move to core1
-            OLED_ON = !OLED_ON;
+            multicore_fifo_push_timeout_us(CMD_TOGGLE_OLED, 0);
           }
           held[i] = true;
         }
@@ -254,16 +292,8 @@ int main(void) {
 
     // enqueue LED frame only if LEDs changed
     led_frame f;
-    if (LEDS_ON) {
-      build_led_frame(&f, pressed_led);
-    } else {
-      // disable LEDS
-      for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-        f.rgb[i][0] = 0;
-        f.rgb[i][1] = 0;
-        f.rgb[i][2] = 0;
-      }
-    }
+    build_led_frame(&f, pressed_led);
+
     if (!same_frame(&f, &last_sent)) {
       // try to enqueue
       if (!queue_try_add(&ledq, &f)) {
