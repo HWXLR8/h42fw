@@ -7,7 +7,7 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 
 | Feature          | State | Notes                                       |
 |:-----------------|:-----:|:--------------------------------------------|
-| HID Gamepad      | ✅    | Tested on Linux.                            |
+| HID Gamepad      | ✅    | Tested on Linux and Windows (DirectInput).  |
 | HID Keyboard     | ❌    |                                             |
 | XInput           | ❌    |                                             |
 | Console Support  | ❌    |                                             |
