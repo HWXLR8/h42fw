@@ -5,6 +5,7 @@
 #define LED_BTN_COUNT   16
 #define LED_PIN         28
 #define LED_TOGGLE_PIN  21
+#define OLED_TOGGLE_PIN 20
 #define BOOTSEL_PIN     14
 #define LATCH_TIME      350 // us
 #define TAC_DEBOUNCE    500 // us

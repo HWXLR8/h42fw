@@ -77,3 +77,19 @@ static inline void oled_putc(uint8_t page, uint8_t *col, char c) {
 void oled_print(uint8_t page, uint8_t col, const char *s) {
     while (*s && col + 6 <= WIDTH) oled_putc(page, &col, *s++);
 }
+
+void oled_sleep(bool enable) {
+  if (enable) {
+    // display OFF (sleep)
+    oled_write_cmd(0xAE);
+    // charge pump OFF
+    oled_write_cmd(0x8D);
+    oled_write_cmd(0x10);
+  } else {
+    // charge pump ON
+    oled_write_cmd(0x8D);
+    oled_write_cmd(0x14);
+    // display ON
+    oled_write_cmd(0xAF);
+  }
+}

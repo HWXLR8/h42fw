@@ -12,9 +12,6 @@
 #include "oled.h"
 #include "config.h"
 
-SOCD_MODE SOCD = LAST_INPUT;
-bool LEDS_ON = true;
-
 static const btn_cfg BTN_CFG[] = {
   /*
    pin    button   idle RGB   press RGB   debounce time */
@@ -147,10 +144,14 @@ int main(void) {
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
 
+  SOCD_MODE SOCD = LAST_INPUT;
+  bool LEDS_ON = true;
+  bool OLED_ON = true;
+
   btn_state   bstate = {0};
   uint32_t    prev_bits = 0;
   bool        pressed_led[LED_BTN_COUNT] = {0};
-  static bool led_toggle_held = false;
+  static bool held[BTN_COUNT] = {0};
   led_frame   last_sent = {0};
 
   while (true) {
@@ -177,10 +178,19 @@ int main(void) {
 
         // LED toggle
         if (p == LED_TOGGLE_PIN) {
-          if (!led_toggle_held) {
+          if (!held[i]) {
             LEDS_ON = !LEDS_ON;
           }
-          led_toggle_held = true;
+          held[i] = true;
+        }
+
+        // OLED toggle
+        if (p == OLED_TOGGLE_PIN) {
+          if (!held[i]) {
+            oled_sleep(OLED_ON); // TODO move to core1
+            OLED_ON = !OLED_ON;
+          }
+          held[i] = true;
         }
 
         // BOOTSEL
@@ -191,7 +201,8 @@ int main(void) {
         if (bit == RIGHT) bstate.right = 0;
         if (bit == UP)    bstate.up    = 0;
         if (bit == DOWN)  bstate.down  = 0;
-        if (p == LED_TOGGLE_PIN) led_toggle_held = false;
+        if (p == LED_TOGGLE_PIN) held[i] = false;
+        if (p == OLED_TOGGLE_PIN) held[i] = false;
       }
     }
     // SOCD cleaning
