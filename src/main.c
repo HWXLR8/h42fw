@@ -21,31 +21,43 @@ typedef enum {
 } fifo_cmd;
 
 
+// When remapping buttons, the pin ordering of elements must remain
+// unchanged since it corresponds to the order in which the LEDs are
+// laid out on the gamepad.
+//
+// Example:
+// pin5 = LED0
+// pin3 = LED1
+// ...
+// pin26 = LED15
+//
+// To remap buttons, only change the second field. Buttons with no
+// LEDs must always be placed at the end.
 static const btn_cfg BTN_CFG[] = {
   /*
-   pin    button   idle RGB   press RGB   debounce time */
-  {5,     LEFT,    5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {3,     DOWN,    5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {4,     RIGHT,   5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {2,     B1,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {10,    B2,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {11,    B3,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {12,    B4,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {13,    B5,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {6,     B6,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {7,     B7,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {8,     B8,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {9,     B9,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {27,    B10,     5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {18,    B11,     5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {19,    B12,     5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
-  {26,    UP,      5, 0, 5,   100, 0, 100,    KEY_DEBOUNCE},
+   pin    button   idle RGB   press RGB     debounce time */
+  {5,     LEFT,    5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {3,     DOWN,    5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {4,     RIGHT,   5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {2,     B1,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {10,    B2,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {11,    B3,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {12,    B4,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {13,    B5,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {6,     B6,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {7,     B7,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {8,     B8,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {9,     B9,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {27,    B10,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {18,    B11,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {19,    B12,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+  {26,    UP,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
   // no LEDs
-  {14,    B13,     0, 0, 0,   0, 0, 0,    TAC_DEBOUNCE},
-  {21,    B14,     0, 0, 0,   0, 0, 0,    TAC_DEBOUNCE},
-  {20,    B15,     0, 0, 0,   0, 0, 0,    TAC_DEBOUNCE},
-  {16,    B16,     0, 0, 0,   0, 0, 0,    TAC_DEBOUNCE},
-  {17,    B17,     0, 0, 0,   0, 0, 0,    TAC_DEBOUNCE},
+  {14,    B13,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {21,    B14,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {20,    B15,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {16,    B16,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {17,    B17,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
 };
 
 void init_btns() {
@@ -160,27 +172,27 @@ static void core1_main() {
 }
 
 static inline void build_led_frame(led_frame* out, const bool pressed[]) {
-    for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-      uint8_t r = BTN_CFG[i].r;
-      uint8_t g = BTN_CFG[i].g;
-      uint8_t b = BTN_CFG[i].b;
-      if (pressed[i]) {
-        r = BTN_CFG[i].rp;
-        g = BTN_CFG[i].gp;
-        b = BTN_CFG[i].bp;
-      }
-      out->rgb[i][0] = r;
-      out->rgb[i][1] = g;
-      out->rgb[i][2] = b;
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    uint8_t r = BTN_CFG[i].r;
+    uint8_t g = BTN_CFG[i].g;
+    uint8_t b = BTN_CFG[i].b;
+    if (pressed[i]) {
+      r = BTN_CFG[i].rp;
+      g = BTN_CFG[i].gp;
+      b = BTN_CFG[i].bp;
     }
+    out->rgb[i][0] = r;
+    out->rgb[i][1] = g;
+    out->rgb[i][2] = b;
   }
+}
 
 static inline bool same_frame(const led_frame* a, const led_frame* b) {
   return memcmp(a, b, sizeof(*a)) == 0;
 }
 
 static inline uint32_t read_buttons(bool* pressed_led) {
-  static btn_state bstate = {0};
+  static dpad_state dpad = {0};
   static bool held[BTN_COUNT] = {0};
   uint32_t bmask = 0;
 
@@ -194,10 +206,10 @@ static inline uint32_t read_buttons(bool* pressed_led) {
       if (i < LED_BTN_COUNT) pressed_led[i] = true;
 
       // timestamp when pressed
-      if (bit == LEFT)  { if (bstate.left  == 0) bstate.left  = ++bstate.time;}
-      if (bit == RIGHT) { if (bstate.right == 0) bstate.right = ++bstate.time;}
-      if (bit == UP)    { if (bstate.up    == 0) bstate.up    = ++bstate.time;}
-      if (bit == DOWN)  { if (bstate.down  == 0) bstate.down  = ++bstate.time;}
+      if (bit == LEFT)  {if (dpad.l == 0) dpad.l = ++dpad.time;}
+      if (bit == RIGHT) {if (dpad.r == 0) dpad.r = ++dpad.time;}
+      if (bit == UP)    {if (dpad.u == 0) dpad.u = ++dpad.time;}
+      if (bit == DOWN)  {if (dpad.d == 0) dpad.d = ++dpad.time;}
 
       // LED toggle
       if (p == LED_TOGGLE_PIN) {
@@ -219,43 +231,51 @@ static inline uint32_t read_buttons(bool* pressed_led) {
       if (p == BOOTSEL_PIN) reset_usb_boot(0, 0);
 
     } else {
-      if (bit == LEFT)  bstate.left  = 0;
-      if (bit == RIGHT) bstate.right = 0;
-      if (bit == UP)    bstate.up    = 0;
-      if (bit == DOWN)  bstate.down  = 0;
-      if (p == LED_TOGGLE_PIN) held[i] = false;
+      if (bit == LEFT)  dpad.l = 0;
+      if (bit == RIGHT) dpad.r = 0;
+      if (bit == UP)    dpad.u = 0;
+      if (bit == DOWN)  dpad.d = 0;
+      if (p == LED_TOGGLE_PIN)  held[i] = false;
       if (p == OLED_TOGGLE_PIN) held[i] = false;
     }
   }
 
   // SOCD cleaning
   if (SOCD == LAST_INPUT) {
-    if (bstate.left && bstate.right) {
-      if (bstate.left < bstate.right) bmask &= ~(1 << LEFT);
-      else bmask &= ~(1 << RIGHT);
+    if (dpad.l && dpad.r) {
+      if (dpad.l < dpad.r) bmask &= ~(1u << LEFT);
+      else bmask &= ~(1u << RIGHT);
     }
-    if (bstate.up && bstate.down) {
-      if (bstate.up < bstate.down) bmask &= ~(1 << UP);
-      else bmask &= ~(1 << DOWN);
+    if (dpad.u && dpad.d) {
+      if (dpad.u < dpad.d) bmask &= ~(1u << UP);
+      else bmask &= ~(1u << DOWN);
     }
   } else if (SOCD == NEUTRAL) {
-    if (bstate.left && bstate.right) {
-      bmask &= ~(1 << LEFT);
-      bmask &= ~(1 << RIGHT);
+    if (dpad.l && dpad.r) {
+      bmask &= ~(1u << LEFT);
+      bmask &= ~(1u << RIGHT);
     }
-    if (bstate.up && bstate.down) {
-      bmask &= ~(1 << UP);
-      bmask &= ~(1 << DOWN);
+    if (dpad.u && dpad.d) {
+      bmask &= ~(1u << UP);
+      bmask &= ~(1u << DOWN);
     }
   }
 
+  // disable LEDs to reflect SOCD
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    pressed_led[i] = ((bmask >> BTN_CFG[i].bit) & 1u) != 0;
+  }
+
   // get hat bits
-  uint32_t dir = bmask & ((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) | (1u<<LEFT));
+  uint32_t dir = bmask & ((1u << UP) |
+                          (1u << RIGHT) |
+                          (1u << DOWN) |
+                          (1u << LEFT));
   uint8_t hat = 0x0F; // neutral (Null)
-  bool up    = dir & (1u<<UP);
-  bool right = dir & (1u<<RIGHT);
-  bool down  = dir & (1u<<DOWN);
-  bool left  = dir & (1u<<LEFT);
+  bool up    = dir & (1u << UP);
+  bool right = dir & (1u << RIGHT);
+  bool down  = dir & (1u << DOWN);
+  bool left  = dir & (1u << LEFT);
   if (up && right) hat = 1;
   else if (down && right) hat = 3;
   else if (down && left) hat = 5;
@@ -270,7 +290,7 @@ static inline uint32_t read_buttons(bool* pressed_led) {
   return bits;
 }
 
-int main(void) {
+int main() {
   board_init();
   tusb_init();
   init_btns();

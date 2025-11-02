@@ -30,18 +30,18 @@ typedef enum {
 } BTN_BIT;
 
 typedef struct {
-  uint pin;
-  uint bit;
-  uint r, g, b; // idle color
+  uint pin;        // MCU pin
+  uint bit;        // bit in the HID report
+  uint r, g, b;    // idle color
   uint rp, gp, bp; // pressed color
-  uint debounce;
+  uint debounce;   // debounce time
 } btn_cfg;
 
 // cardinal directions
 typedef struct {
-  uint left;
-  uint right;
-  uint up;
-  uint down;
+  uint l;
+  uint r;
+  uint u;
+  uint d;
   uint64_t time;
-} btn_state;
+} dpad_state;
