@@ -27,20 +27,33 @@ uint8_t const * tud_descriptor_device_cb(void) {
 
 // 8 buttons, no axes, 2 bytes total (byte2 = padding for future use)
 uint8_t const desc_hid_report[] = {
-  0x05,0x01,        // Generic Desktop
-  0x09,0x05,        // Game Pad
-  0xA1,0x01,        // Application
-    0x05,0x09,      // Button
-    0x19,0x01,      // Button 1
-    0x29,0x15,      // Button 21
-    0x15,0x00,      // Logical Min 0
-    0x25,0x01,      // Logical Max 1
-    0x95,0x15,      // Report Count: 21 buttons
-    0x75,0x01,      // Report Size: 1 bit
-    0x81,0x02,      // Input (Data,Var,Abs)
-    0x95,0x0B,      // pad 11 bits to make 32 bits (4B)
-    0x75,0x01,
-    0x81,0x03,      // Input (Const,Var,Abs)
+  0x05,0x01, // Generic Desktop
+  0x09,0x05, // Game Pad
+  0xA1,0x01, // Application
+
+  // 21 button bits
+  0x05,0x09, // Button
+  0x19,0x01, // Button 1
+  0x29,0x15, // Button 21
+  0x15,0x00, // Logical Min 0
+  0x25,0x01, // Logical Max 1
+  0x95,0x15, // Report Count: 21 buttons
+  0x75,0x01, // Report Size: 1 bit
+  0x81,0x02, // Input (Data,Var,Abs)
+
+  // hat swich (4 bits w/ null)
+  0x05,0x01, // Generic Desktop
+  0x09,0x39, // Hat switch
+  0x15,0x00, // Logical Min 0
+  0x25,0x07, // Logical Max 7
+  0x75,0x04, // Report Size 4
+  0x95,0x01, // Report Count 1
+  0x81,0x42, // Input (Data,Var,Abs,Null)
+
+  // pad to 32 bits
+  0x95,0x07, // 7 bits padding
+  0x75,0x01,
+  0x81,0x03, // Input (Const,Var,Abs)
   0xC0
 };
 

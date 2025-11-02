@@ -53,7 +53,9 @@ void init_btns() {
 }
 
 typedef struct __attribute__((packed)) {
-  uint32_t buttons;  // bit0 -> bit20 for 21 btns
+  // [0 ..20] -> buttons
+  // [24..21] -> hat
+  uint32_t buttons;
 } gamepad_report_t;
 
 static inline bool is_pressed(uint pin, int idx) {
@@ -134,6 +136,7 @@ int main(void) {
   tusb_init();
   init_btns();
 
+  // oled
   oled_init();
   oled_clear();
   oled_print(0, 0, "BEATMANIA IS NOT COOL");
@@ -145,7 +148,7 @@ int main(void) {
   multicore_launch_core1(core1_main);
 
   btn_state   bstate = {0};
-  uint32_t    prev_bmask = 0;
+  uint32_t    prev_bits = 0;
   bool        pressed_led[LED_BTN_COUNT] = {0};
   static bool led_toggle_held = false;
   led_frame   last_sent = {0};
@@ -212,11 +215,30 @@ int main(void) {
       }
     }
 
+    // get hat bits
+    uint32_t dir = bmask & ((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) | (1u<<LEFT));
+    uint8_t hat = 0x0F; // neutral (Null)
+    bool up    = dir & (1u<<UP);
+    bool right = dir & (1u<<RIGHT);
+    bool down  = dir & (1u<<DOWN);
+    bool left  = dir & (1u<<LEFT);
+    if (up && right) hat = 1;
+    else if (down && right) hat = 3;
+    else if (down && left) hat = 5;
+    else if (up && left) hat = 7;
+    else if (up) hat = 0;
+    else if (right) hat = 2;
+    else if (down) hat = 4;
+    else if (left) hat = 6;
+    // remove dpad from buttons, then insert hat at bits 21..24
+    uint32_t bits = bmask & ~((1u<<UP) | (1u<<RIGHT) | (1u<<DOWN) |(1u<<LEFT));
+    bits |= ((uint32_t)(hat & 0x0F)) << 21;
+
     // send HID report
-    if (tud_hid_ready() && bmask != prev_bmask) {
-      gamepad_report_t rpt = {.buttons = bmask};
+    if (tud_hid_ready() && bits != prev_bits) {
+      gamepad_report_t rpt = {.buttons = bits};
       tud_hid_report(0, &rpt, sizeof(rpt));
-      prev_bmask = bmask;
+      prev_bits = bits;
     }
 
     // enqueue LED frame only if LEDs changed
