@@ -57,12 +57,11 @@ static inline void oled_set_cursor(uint8_t page, uint8_t col) {
 }
 
 void oled_clear(void) {
-    for (uint8_t p = 0; p < (HEIGHT/8); ++p) {
-        oled_set_cursor(p, 0);
-        // send 128 zeros for each page
-        uint8_t row[WIDTH]; memset(row, 0x00, sizeof(row));
-        oled_write_data(row, sizeof(row));
-    }
+  static const uint8_t Z[WIDTH] = {0}; // zero buffer
+  for (uint8_t p = 0; p < (HEIGHT/8); ++p) {
+    oled_set_cursor(p, 0);
+    oled_write_data(Z, sizeof Z);
+  }
 }
 
 // Each character is 5 columns plus one blank column.
