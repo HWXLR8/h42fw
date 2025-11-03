@@ -24,4 +24,4 @@
 #define I2C_SCL_PIN 1
 #define OLED_ADDR   0x3C
 #define WIDTH       128
-#define HEIGHT      32
+#define HEIGHT      64
