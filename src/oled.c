@@ -93,3 +93,18 @@ void oled_sleep(bool enable) {
     oled_write_cmd(0xAF);
   }
 }
+
+void oled_blit_img(const uint8_t* img) {
+  // window: columns 0..127, pages 0..7
+  oled_write_cmd(0x21); oled_write_cmd(0x00); oled_write_cmd(0x7F);
+  oled_write_cmd(0x22); oled_write_cmd(0x00); oled_write_cmd(0x07);
+
+  // horizontal addressing
+  oled_write_cmd(0x20); oled_write_cmd(0x00);
+
+  // send all pixels
+  oled_write_data(img, 128 * (64/8));  // 1024 bytes
+
+  // restore page addressing for text
+  oled_write_cmd(0x20); oled_write_cmd(0x02);
+}

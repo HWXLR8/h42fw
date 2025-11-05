@@ -25,3 +25,4 @@
 #define OLED_ADDR   0x3C
 #define WIDTH       128
 #define HEIGHT      64
+#define OLED_IMG    "sega.h"

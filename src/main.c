@@ -11,6 +11,7 @@
 #include "main.h"
 #include "oled.h"
 #include "config.h"
+#include OLED_IMG
 
 SOCD_MODE SOCD = LAST_INPUT;
 
@@ -115,10 +116,11 @@ static void core1_main() {
   // init oled
   oled_init();
   oled_clear();
-  oled_print(0, 0, "BEATMANIA IS NOT COOL");
-  oled_print(1, 0, "IT'S NOT FUN");
-  oled_print(2, 0, "IT'S NOT FRESH");
-  oled_print(3, 0, "IT'S NOT GOOD");
+  oled_blit_img(IMG128x64);
+  /* oled_print(0, 0, "BEATMANIA IS NOT COOL"); */
+  /* oled_print(1, 0, "IT'S NOT FUN"); */
+  /* oled_print(2, 0, "IT'S NOT FRESH"); */
+  /* oled_print(3, 0, "IT'S NOT GOOD"); */
 
   // init LEDs
   PIO pio = pio0;
