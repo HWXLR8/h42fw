@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+# png2ssd1306.py
+# Convert a 128x64 PNG to SSD1306 page-order bytes (1024 B).
+# bit0 = top pixel within each 8-row page; 1 = pixel ON.
+
+import argparse, os, sys
+from PIL import Image
+
+def pack_ssd1306(img, threshold=128, black_is_on=True):
+    if img.size != (128, 64):
+        raise ValueError(f"expected 128x64, got {img.size}")
+    g = img.convert("L")
+    w, h = g.size
+    out = bytearray(128 * (64 // 8))
+    # Pages 0..7, columns 0..127, bits 0..7 top->bottom
+    for page in range(8):
+        y0 = page * 8
+        for x in range(128):
+            b = 0
+            for bit in range(8):
+                y = y0 + bit
+                v = g.getpixel((x, y))  # 0..255
+                on = (v < threshold) if black_is_on else (v >= threshold)
+                if on:
+                    b |= (1 << bit)
+            out[page * 128 + x] = b
+    return bytes(out)
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("input_png")
+    p.add_argument("output", help="output .bin or .h")
+    p.add_argument("--name", default="IMG128x64", help="C symbol for --c")
+    p.add_argument("--threshold", type=int, default=128, help="0..255")
+    p.add_argument("--black-on", action="store_true", help="black pixels => ON (default)")
+    p.add_argument("--white-on", action="store_true", help="white pixels => ON")
+    p.add_argument("--flip-x", action="store_true")
+    p.add_argument("--flip-y", action="store_true")
+    p.add_argument("--rotate180", action="store_true")
+    p.add_argument("--dither", choices=["none","fs"], default="none",
+                   help="pre-dither before threshold")
+    p.add_argument("--format", choices=["bin","c"], default=None,
+                   help="force output format; inferred from extension if omitted")
+    args = p.parse_args()
+
+    fmt = args.format
+    if fmt is None:
+        ext = os.path.splitext(args.output)[1].lower()
+        fmt = "c" if ext in [".h", ".hpp"] else "bin"
+
+    img = Image.open(args.input_png).convert("L")
+    if args.dither == "fs":
+        # Floyd–Steinberg to 1-bit, then back to 8-bit for consistent thresholding
+        img = img.convert("1").convert("L")
+    if args.flip_x: img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    if args.flip_y: img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    if args.rotate180: img = img.transpose(Image.ROTATE_180)
+
+    data = pack_ssd1306(
+        img,
+        threshold=args.threshold,
+        black_is_on=not args.white_on  # default black_on
+    )
+
+    if fmt == "bin":
+        with open(args.output, "wb") as f:
+            f.write(data)
+    else:
+        # C header
+        by = ",".join(f"0x{b:02X}" for b in data)
+        guard = args.name.upper()
+        with open(args.output, "w") as f:
+            f.write(f"#pragma once\n"
+                    f"static const unsigned char {args.name}[1024] = {{\n{by}\n}};\n")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

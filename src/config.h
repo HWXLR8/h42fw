@@ -26,3 +26,4 @@
 #define WIDTH       128
 #define HEIGHT      64
 #define OLED_IMG    "sega.h"
+#define OLED_CHUNK  128

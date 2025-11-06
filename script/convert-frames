@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+# pngs2ssd1306_anim.py
+# Convert 128x64 PNG frames to SSD1306 page-order animation.
+# Output: .h (C header with frames[][]) or .bin (concatenated frames).
+# bit0 = top pixel within each 8-row page; 1 = pixel ON.
+
+import argparse, os, sys, re
+from PIL import Image
+
+def natural_key(s):
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
+
+def pack_ssd1306(img, threshold=128, black_is_on=True):
+    if img.size != (128, 64):
+        raise ValueError(f"expected 128x64, got {img.size}")
+    g = img.convert("L")
+    out = bytearray(128 * (64 // 8))
+    for page in range(8):
+        y0 = page * 8
+        for x in range(128):
+            b = 0
+            for bit in range(8):
+                y = y0 + bit
+                v = g.getpixel((x, y))  # 0..255
+                on = (v < threshold) if black_is_on else (v >= threshold)
+                if on:
+                    b |= (1 << bit)
+            out[page * 128 + x] = b
+    return bytes(out)
+
+def load_and_transform(path, args):
+    img = Image.open(path).convert("L")
+    if args.dither == "fs":
+        img = img.convert("1").convert("L")
+    if args.flip_x: img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    if args.flip_y: img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    if args.rotate180: img = img.transpose(Image.ROTATE_180)
+    return img
+
+def write_header(out_path, name, frames_bytes, fps, black_is_on):
+    n = len(frames_bytes)
+    guard = re.sub(r'\W+', '_', name.upper()) + "_H"
+    fps_define = f"#define {name}_FPS {int(fps)}\n#define {name}_FRAME_MS (1000/{name}_FPS)\n" if fps else ""
+    with open(out_path, "w") as f:
+        f.write(
+            "#pragma once\n"
+            "#include <stdint.h>\n"
+            f"#define {name}_WIDTH 128\n"
+            f"#define {name}_HEIGHT 64\n"
+            f"#define {name}_FRAME_BYTES 1024\n"
+            f"#define {name}_NUM_FRAMES {n}\n"
+            f"{fps_define}"
+            f"/* pixels_on = {'black<=' if black_is_on else 'white>='}threshold */\n"
+            f"static const uint8_t {name}_FRAMES[{name}_NUM_FRAMES][{name}_FRAME_BYTES] = {{\n"
+        )
+        for i, frame in enumerate(frames_bytes):
+            f.write(f"  /* frame {i} */ {{\n    ")
+            for j, b in enumerate(frame):
+                sep = ", " if j != len(frame)-1 else ""
+                f.write(f"0x{b:02X}{sep}")
+                if (j+1) % 16 == 0 and j != len(frame)-1:
+                    f.write("\n    ")
+            f.write("\n  }")
+            f.write(",\n" if i != n-1 else "\n")
+        f.write("};\n")
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("input_pngs", nargs="+", help="PNG frames (128x64). Natural-sorted by name.")
+    p.add_argument("output", help="output .bin or .h")
+    p.add_argument("--name", default="ANIM128x64", help="C symbol base for --c")
+    p.add_argument("--threshold", type=int, default=128, help="0..255")
+    p.add_argument("--black-on", action="store_true", help="black pixels => ON (default)")
+    p.add_argument("--white-on", action="store_true", help="white pixels => ON")
+    p.add_argument("--flip-x", action="store_true")
+    p.add_argument("--flip-y", action="store_true")
+    p.add_argument("--rotate180", action="store_true")
+    p.add_argument("--dither", choices=["none","fs"], default="none", help="pre-dither")
+    p.add_argument("--format", choices=["bin","c"], default=None, help="force output format")
+    p.add_argument("--fps", type=float, default=0.0, help="optional, embed playback rate")
+    args = p.parse_args()
+
+    fmt = args.format
+    if fmt is None:
+        ext = os.path.splitext(args.output)[1].lower()
+        fmt = "c" if ext in [".h", ".hpp"] else "bin"
+
+    files = sorted(args.input_pngs, key=natural_key)
+    if not files:
+        print("no input frames", file=sys.stderr); return 2
+
+    frames = []
+    for path in files:
+        img = load_and_transform(path, args)
+        frames.append(
+            pack_ssd1306(
+                img,
+                threshold=args.threshold,
+                black_is_on=not args.white_on  # default black_on
+            )
+        )
+
+    if fmt == "bin":
+        with open(args.output, "wb") as f:
+            for frame in frames:
+                f.write(frame)
+    else:
+        name = re.sub(r'\W+', '_', args.name)
+        write_header(args.output, name, frames, args.fps, black_is_on=not args.white_on)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

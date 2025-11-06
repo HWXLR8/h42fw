@@ -12,6 +12,7 @@
 #include "oled.h"
 #include "config.h"
 #include OLED_IMG
+#include "anim.h"
 
 SOCD_MODE SOCD = LAST_INPUT;
 
@@ -122,6 +123,9 @@ static void core1_main() {
   /* oled_print(2, 0, "IT'S NOT FRESH"); */
   /* oled_print(3, 0, "IT'S NOT GOOD"); */
 
+  static oled_anim_t anim;
+  oled_anim_init(&anim, ANIM_FRAMES, ANIM_NUM_FRAMES, ANIM_FRAME_MS);
+
   // init LEDs
   PIO pio = pio0;
   uint sm = 0;
@@ -130,6 +134,9 @@ static void core1_main() {
 
   led_frame f;
   while (true) {
+    // update oled
+    oled_anim_tick(&anim);
+
     // drain FIFO
     while (multicore_fifo_rvalid()) {
       uint32_t cmd = multicore_fifo_pop_blocking();

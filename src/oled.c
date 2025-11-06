@@ -95,16 +95,79 @@ void oled_sleep(bool enable) {
 }
 
 void oled_blit_img(const uint8_t* img) {
-  // window: columns 0..127, pages 0..7
-  oled_write_cmd(0x21); oled_write_cmd(0x00); oled_write_cmd(0x7F);
-  oled_write_cmd(0x22); oled_write_cmd(0x00); oled_write_cmd(0x07);
-
-  // horizontal addressing
-  oled_write_cmd(0x20); oled_write_cmd(0x00);
+  // cols 0 -> 127
+  oled_write_cmd(0x21);
+  oled_write_cmd(0x00);
+  oled_write_cmd(0x7F);
+  // pages 0 -> 7
+  oled_write_cmd(0x22);
+  oled_write_cmd(0x00);
+  oled_write_cmd(0x07);
+  // horizontal addressing mode
+  oled_write_cmd(0x20);
+  oled_write_cmd(0x00);
 
   // send all pixels
   oled_write_data(img, 128 * (64/8));  // 1024 bytes
 
   // restore page addressing for text
   oled_write_cmd(0x20); oled_write_cmd(0x02);
+}
+
+void oled_anim_init(oled_anim_t* a,
+                    const uint8_t frames[][1024],
+                    uint16_t frame_n,
+                    uint32_t frame_ms) {
+  a->frames = frames;
+  a->frame_n = frame_n;
+  a->frame_i = 0;
+  a->frame_sent = false;
+  a->frame_ms = frame_ms;
+  a->start = get_absolute_time();
+}
+
+void oled_anim_tick(oled_anim_t* a) {
+  if (!a->frame_sent) {
+    // cols 0 -> 127
+    oled_write_cmd(0x21);
+    oled_write_cmd(0x00);
+    oled_write_cmd(0x7F);
+    // pages 0 -> 7
+    oled_write_cmd(0x22);
+    oled_write_cmd(0x00);
+    oled_write_cmd(0x07);
+    // horizontal addressing mode
+    oled_write_cmd(0x20);
+    oled_write_cmd(0x00);
+
+    // send frame
+    const uint8_t* frame = a->frames[a->frame_i];
+    oled_write_data(frame, 1024);
+
+    // restore page mode
+    oled_write_cmd(0x20);
+    oled_write_cmd(0x02);
+
+    a->frame_sent = true;
+  }
+
+  // re-init once frame done
+  uint64_t us = absolute_time_diff_us(a->start, get_absolute_time());
+  if (us >= (uint64_t)a->frame_ms * 1000ull) {
+    a->frame_i = (a->frame_i + 1) % a->frame_n;
+    a->start = get_absolute_time();
+    a->frame_sent = false;
+  }
+}
+
+void oled_play_anim(const uint8_t frames[][1024],
+                    uint16_t count,
+                    uint32_t frame_ms,
+                    uint16_t loops) {
+  for (uint16_t L = 0; loops == 0 || L < loops; ++L) {
+    for (uint16_t i = 0; i < count; ++i) {
+      oled_blit_img(frames[i]);
+      sleep_ms(frame_ms);
+    }
+  }
 }
