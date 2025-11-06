@@ -21,3 +21,4 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 | OLED Support     | ✅    |                                             |
 | OLED Images      | ✅    |                                             |
 | OLED Animations  | ✅    |                                             |
+| Live config      | ⚠️    | LED/OLED toggle only.                       |
