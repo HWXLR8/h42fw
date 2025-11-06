@@ -17,7 +17,7 @@ Custom FW for Haute42 leverless gamepads. The goals of this project are:
 | SOCD Cleaning    | ⚠️    | Neutral/Last-input only.                    |
 | LED Support      | ✅    | Per-button LED config for idle/press color. |
 | LED Brightness   | ⚠️    | Only on/off toggle.                         |
-| LED Animations   | ⚠️    | Button illumination on press.               |
-| OLED Support     | ✅    | Text rendering only.                        |
-| OLED Images      | ❌    |                                             |
-| OLED Animations  | ❌    |                                             |
+| LED Animations   | ⚠️    | Button illumination on press only.          |
+| OLED Support     | ✅    |                                             |
+| OLED Images      | ✅    |                                             |
+| OLED Animations  | ✅    |                                             |
