@@ -27,3 +27,8 @@
 #define HEIGHT      64
 #define OLED_IMG    "sega.h"
 #define OLED_CHUNK  128
+
+// settings
+#define NVM_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+#define MAGIC      0xBEEFBABE
+#define VERSION    1

@@ -2,21 +2,26 @@
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
 #include "pico/bootrom.h"
+#include "hardware/flash.h"
 #include "hardware/gpio.h"
+#include "hardware/i2c.h"
 #include "hardware/pio.h"
+#include "hardware/sync.h"
 #include "ws2812.pio.h"
 #include "bsp/board.h"
 #include "tusb.h"
 
-#include "main.h"
-#include "oled.h"
 #include "config.h"
-#include "cfg.h"
 #include OLED_IMG
 #include "anim.h"
+#include "font/font5x7.h"
 
+
+typedef enum {
+  NEUTRAL,    // L+R = 0 or U+D = 0
+  LAST_INPUT, // last input wins
+} SOCD_MODE;
 SOCD_MODE SOCD = LAST_INPUT;
-cfg_t cfg;
 
 typedef enum {
   CMD_NONE = 0,
@@ -24,6 +29,37 @@ typedef enum {
   CMD_TOGGLE_LEDS = 2,
 } fifo_cmd;
 
+typedef enum {
+  LEFT = 0,
+  DOWN,
+  RIGHT,
+  B1,
+  B2,
+  B3,
+  B4,
+  B5,
+  B6,
+  B7,
+  B8,
+  B9,
+  B10,
+  B11,
+  B12,
+  UP,
+  B13,
+  B14,
+  B15,
+  B16,
+  B17,
+} BTN_BIT;
+
+typedef struct {
+  uint pin;        // MCU pin
+  uint bit;        // bit in the HID report
+  uint r, g, b;    // idle color
+  uint rp, gp, bp; // pressed color
+  uint debounce;   // debounce time
+} btn_cfg;
 
 // When remapping buttons, the pin ordering of elements must remain
 // unchanged since it corresponds to the order in which the LEDs are
@@ -63,6 +99,234 @@ static const btn_cfg BTN_CFG[] = {
   {16,    B16,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
   {17,    B17,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
 };
+
+// cardinal directions
+typedef struct {
+  uint l;
+  uint r;
+  uint u;
+  uint d;
+  uint64_t time;
+} dpad_state;
+
+typedef struct {
+  const uint8_t (*frames)[1024];
+  uint16_t frame_n;  // frame count
+  uint16_t frame_i;  // frame index
+  uint8_t page;      // 0 -> 7
+  uint8_t col;       // 0 -> 127
+  uint32_t frame_ms; // frame time
+  bool frame_sent;   // has the frame been sent
+  absolute_time_t start; // frame start
+} oled_anim;
+
+typedef struct __attribute__((packed)) { // force 1B alignment of members
+  uint32_t magic;
+  uint16_t version;
+  uint8_t  enable_leds;
+  uint8_t  enable_oled;
+  // padding accounting for each of the above members
+  uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1];
+} cfg_t;
+cfg_t cfg;
+
+// set cfg to sane defaults
+static void init_cfg(cfg_t* c) {
+  memset(c, 0, sizeof(*c)); // zero all fields
+  c->magic = MAGIC;
+  c->version = VERSION;
+  c->enable_leds = 1;
+  c->enable_oled = 1;
+}
+
+bool cfg_load(cfg_t* cfg) {
+  // return a pointer to the cfg region in XIP
+  const cfg_t* f = (const cfg_t*)(XIP_BASE + NVM_OFFSET);
+  if (f->magic == MAGIC && f->version == VERSION) {
+    memcpy(cfg, f, sizeof(*cfg));
+    return true;
+  }
+  init_cfg(cfg);
+  return false;
+}
+
+void cfg_save(const cfg_t* cfg) {
+  // temporary buffer
+  uint8_t page[FLASH_PAGE_SIZE] = {0};
+  memcpy(page, cfg, sizeof(*cfg));
+
+  uint32_t irq = save_and_disable_interrupts();
+  flash_range_erase(NVM_OFFSET, FLASH_SECTOR_SIZE);
+  flash_range_program(NVM_OFFSET, page, FLASH_PAGE_SIZE);
+  restore_interrupts(irq);
+}
+
+static void oled_write_cmd(uint8_t cmd) {
+  uint8_t buf[2] = {0x00, cmd};
+  i2c_write_blocking(I2C_INST, OLED_ADDR, buf, 2, false);
+}
+
+static void oled_write_data(const uint8_t *data, uint16_t len) {
+  while (len) {
+    uint16_t n = len > 128 ? 128 : len; // safe chunk
+    uint8_t buf[1 + 128];
+    buf[0] = 0x40;                      // Co=0, D/C#=1 => data stream
+    memcpy(&buf[1], data, n);
+    i2c_write_blocking(I2C_INST, OLED_ADDR, buf, n + 1, false);
+    data += n;
+    len  -= n;
+  }
+}
+
+void oled_init(void) {
+    i2c_init(I2C_INST, 400 * 1000);
+    gpio_set_function(I2C_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA_PIN);
+    gpio_pull_up(I2C_SCL_PIN);
+    sleep_ms(10);
+    oled_write_cmd(0xAE);                       // display off
+    oled_write_cmd(0xD5); oled_write_cmd(0x80); // clk div
+    oled_write_cmd(0xA8); oled_write_cmd(HEIGHT == 64 ? 0x3F : 0x1F); // multiplex
+    oled_write_cmd(0xD3); oled_write_cmd(0x00); // display offset
+    oled_write_cmd(0x40);                       // start line
+    oled_write_cmd(0x8D); oled_write_cmd(0x14); // charge pump on
+    oled_write_cmd(0x20); oled_write_cmd(0x02); // page addressing mode
+    oled_write_cmd(0xA1);                       // segment remap
+    oled_write_cmd(0xC8);                       // COM scan dec
+    oled_write_cmd(0xDA); oled_write_cmd(HEIGHT == 64 ? 0x12 : 0x02); // compins
+    oled_write_cmd(0x81); oled_write_cmd(0x8F); // contrast
+    oled_write_cmd(0xD9); oled_write_cmd(0xF1); // precharge
+    oled_write_cmd(0xDB); oled_write_cmd(0x40); // vcomh
+    oled_write_cmd(0xA4);                       // display follows RAM
+    oled_write_cmd(0xA6);                       // normal display
+    oled_write_cmd(0xAF);                       // display on
+}
+
+static void oled_set_cursor(uint8_t page, uint8_t col) {
+    // page: 0..3 for 32px tall; 0..7 for 64px tall
+    oled_write_cmd(0xB0 | (page & 0x07));
+    oled_write_cmd(0x00 | (col & 0x0F)); // lower col nibble
+    oled_write_cmd(0x10 | (col >> 4));   // upper col nibble
+}
+
+void oled_clear(void) {
+  static const uint8_t Z[WIDTH] = {0}; // zero buffer
+  for (uint8_t p = 0; p < (HEIGHT/8); ++p) {
+    oled_set_cursor(p, 0);
+    oled_write_data(Z, sizeof Z);
+  }
+}
+
+// Each character is 5 columns plus one blank column.
+// glyph[] bytes are vertical columns, bit0 = top pixel.
+static void oled_putc(uint8_t page, uint8_t *col, char c) {
+    if (c < 32 || c > 127) c = '?';
+    oled_set_cursor(page, *col);
+    oled_write_data(FONT5x7[c - 32], 5);
+    uint8_t space = 0x00;
+    oled_write_data(&space, 1);
+    *col += 6;
+}
+void oled_print(uint8_t page, uint8_t col, const char *s) {
+    while (*s && col + 6 <= WIDTH) oled_putc(page, &col, *s++);
+}
+
+void oled_sleep(bool enable) {
+  if (enable) {
+    // display OFF (sleep)
+    oled_write_cmd(0xAE);
+    // charge pump OFF
+    oled_write_cmd(0x8D);
+    oled_write_cmd(0x10);
+  } else {
+    // charge pump ON
+    oled_write_cmd(0x8D);
+    oled_write_cmd(0x14);
+    // display ON
+    oled_write_cmd(0xAF);
+  }
+}
+
+void oled_blit_img(const uint8_t* img) {
+  // cols 0 -> 127
+  oled_write_cmd(0x21);
+  oled_write_cmd(0x00);
+  oled_write_cmd(0x7F);
+  // pages 0 -> 7
+  oled_write_cmd(0x22);
+  oled_write_cmd(0x00);
+  oled_write_cmd(0x07);
+  // horizontal addressing mode
+  oled_write_cmd(0x20);
+  oled_write_cmd(0x00);
+
+  // send all pixels
+  oled_write_data(img, 128 * (64/8));  // 1024 bytes
+
+  // restore page addressing for text
+  oled_write_cmd(0x20); oled_write_cmd(0x02);
+}
+
+void oled_anim_init(oled_anim* a,
+                    const uint8_t frames[][1024],
+                    uint16_t frame_n,
+                    uint32_t frame_ms) {
+  a->frames = frames;
+  a->frame_n = frame_n;
+  a->frame_i = 0;
+  a->frame_sent = false;
+  a->frame_ms = frame_ms;
+  a->start = get_absolute_time();
+}
+
+void oled_anim_tick(oled_anim* a) {
+  if (!a->frame_sent) {
+    // cols 0 -> 127
+    oled_write_cmd(0x21);
+    oled_write_cmd(0x00);
+    oled_write_cmd(0x7F);
+    // pages 0 -> 7
+    oled_write_cmd(0x22);
+    oled_write_cmd(0x00);
+    oled_write_cmd(0x07);
+    // horizontal addressing mode
+    oled_write_cmd(0x20);
+    oled_write_cmd(0x00);
+
+    // send frame
+    const uint8_t* frame = a->frames[a->frame_i];
+    oled_write_data(frame, 1024);
+
+    // restore page mode
+    oled_write_cmd(0x20);
+    oled_write_cmd(0x02);
+
+    a->frame_sent = true;
+  }
+
+  // re-init once frame done
+  uint64_t us = absolute_time_diff_us(a->start, get_absolute_time());
+  if (us >= (uint64_t)a->frame_ms * 1000ull) {
+    a->frame_i = (a->frame_i + 1) % a->frame_n;
+    a->start = get_absolute_time();
+    a->frame_sent = false;
+  }
+}
+
+void oled_play_anim(const uint8_t frames[][1024],
+                    uint16_t count,
+                    uint32_t frame_ms,
+                    uint16_t loops) {
+  for (uint16_t L = 0; loops == 0 || L < loops; ++L) {
+    for (uint16_t i = 0; i < count; ++i) {
+      oled_blit_img(frames[i]);
+      sleep_ms(frame_ms);
+    }
+  }
+}
+
+
 
 void init_btns() {
   // enable inputs w/ pull ups
