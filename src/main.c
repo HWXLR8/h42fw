@@ -127,11 +127,21 @@ typedef struct __attribute__((packed)) { // force 1B alignment of members
   uint8_t  enable_oled;
   // padding accounting for each of the above members
   uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1];
-} cfg_t;
-cfg_t cfg;
+} pad_cfg;
+pad_cfg cfg;
+
+typedef struct {
+  uint8_t rgb[LED_BTN_COUNT][3];
+} led_frame;
+
+typedef struct __attribute__((packed)) {
+  // [0 ..20] -> buttons
+  // [24..21] -> hat
+  uint32_t buttons;
+} gamepad_report;
 
 // set cfg to sane defaults
-static void init_cfg(cfg_t* c) {
+static void init_cfg(pad_cfg* c) {
   memset(c, 0, sizeof(*c)); // zero all fields
   c->magic = MAGIC;
   c->version = VERSION;
@@ -139,9 +149,9 @@ static void init_cfg(cfg_t* c) {
   c->enable_oled = 1;
 }
 
-bool cfg_load(cfg_t* cfg) {
+bool cfg_load(pad_cfg* cfg) {
   // return a pointer to the cfg region in XIP
-  const cfg_t* f = (const cfg_t*)(XIP_BASE + NVM_OFFSET);
+  const pad_cfg* f = (const pad_cfg*)(XIP_BASE + NVM_OFFSET);
   if (f->magic == MAGIC && f->version == VERSION) {
     memcpy(cfg, f, sizeof(*cfg));
     return true;
@@ -150,7 +160,7 @@ bool cfg_load(cfg_t* cfg) {
   return false;
 }
 
-void cfg_save(const cfg_t* cfg) {
+void cfg_save(const pad_cfg* cfg) {
   // temporary buffer
   uint8_t page[FLASH_PAGE_SIZE] = {0};
   memcpy(page, cfg, sizeof(*cfg));
@@ -338,12 +348,6 @@ void init_btns() {
   }
 }
 
-typedef struct __attribute__((packed)) {
-  // [0 ..20] -> buttons
-  // [24..21] -> hat
-  uint32_t buttons;
-} gamepad_report;
-
 static bool is_pressed(uint pin, int idx) {
   static bool is_stable[BTN_COUNT];
   static bool was_pressed[BTN_COUNT];
@@ -367,10 +371,6 @@ static bool is_pressed(uint pin, int idx) {
   was_pressed[idx] = pressed;
   return is_stable[idx];
 }
-
-typedef struct {
-  uint8_t rgb[LED_BTN_COUNT][3];
-} led_frame;
 
 // core0 writes, core1 reads
 static queue_t ledq;
