@@ -11,10 +11,12 @@
 #include "main.h"
 #include "oled.h"
 #include "config.h"
+#include "cfg.h"
 #include OLED_IMG
 #include "anim.h"
 
 SOCD_MODE SOCD = LAST_INPUT;
+cfg_t cfg;
 
 typedef enum {
   CMD_NONE = 0,
@@ -303,6 +305,9 @@ int main() {
   board_init();
   tusb_init();
   init_btns();
+
+  // load config from flash
+  cfg_load(&cfg);
 
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
