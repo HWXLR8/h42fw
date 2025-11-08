@@ -114,7 +114,7 @@ void oled_blit_img(const uint8_t* img) {
   oled_write_cmd(0x20); oled_write_cmd(0x02);
 }
 
-void oled_anim_init(oled_anim_t* a,
+void oled_anim_init(oled_anim* a,
                     const uint8_t frames[][1024],
                     uint16_t frame_n,
                     uint32_t frame_ms) {
@@ -126,7 +126,7 @@ void oled_anim_init(oled_anim_t* a,
   a->start = get_absolute_time();
 }
 
-void oled_anim_tick(oled_anim_t* a) {
+void oled_anim_tick(oled_anim* a) {
   if (!a->frame_sent) {
     // cols 0 -> 127
     oled_write_cmd(0x21);

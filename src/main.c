@@ -78,7 +78,7 @@ typedef struct __attribute__((packed)) {
   // [0 ..20] -> buttons
   // [24..21] -> hat
   uint32_t buttons;
-} gamepad_report_t;
+} gamepad_report;
 
 static bool is_pressed(uint pin, int idx) {
   static bool is_stable[BTN_COUNT];
@@ -125,7 +125,7 @@ static void core1_main() {
   /* oled_print(2, 0, "IT'S NOT FRESH"); */
   /* oled_print(3, 0, "IT'S NOT GOOD"); */
 
-  static oled_anim_t anim;
+  static oled_anim anim;
   oled_anim_init(&anim, ANIM_FRAMES, ANIM_NUM_FRAMES, ANIM_FRAME_MS);
 
   // init LEDs
@@ -324,7 +324,7 @@ int main() {
 
     // send HID report
     if (tud_hid_ready() && bits != prev_bits) {
-      gamepad_report_t rpt = {.buttons = bits};
+      gamepad_report rpt = {.buttons = bits};
       tud_hid_report(0, &rpt, sizeof(rpt));
       prev_bits = bits;
     }
