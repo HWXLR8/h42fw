@@ -7,12 +7,12 @@
 #include "config.h"
 #include "font/font5x7.h"
 
-static inline void oled_write_cmd(uint8_t cmd) {
+static void oled_write_cmd(uint8_t cmd) {
   uint8_t buf[2] = {0x00, cmd};
   i2c_write_blocking(I2C_INST, OLED_ADDR, buf, 2, false);
 }
 
-static inline void oled_write_data(const uint8_t *data, uint16_t len) {
+static void oled_write_data(const uint8_t *data, uint16_t len) {
   while (len) {
     uint16_t n = len > 128 ? 128 : len; // safe chunk
     uint8_t buf[1 + 128];
@@ -49,7 +49,7 @@ void oled_init(void) {
     oled_write_cmd(0xAF);                       // display on
 }
 
-static inline void oled_set_cursor(uint8_t page, uint8_t col) {
+static void oled_set_cursor(uint8_t page, uint8_t col) {
     // page: 0..3 for 32px tall; 0..7 for 64px tall
     oled_write_cmd(0xB0 | (page & 0x07));
     oled_write_cmd(0x00 | (col & 0x0F)); // lower col nibble
@@ -66,7 +66,7 @@ void oled_clear(void) {
 
 // Each character is 5 columns plus one blank column.
 // glyph[] bytes are vertical columns, bit0 = top pixel.
-static inline void oled_putc(uint8_t page, uint8_t *col, char c) {
+static void oled_putc(uint8_t page, uint8_t *col, char c) {
     if (c < 32 || c > 127) c = '?';
     oled_set_cursor(page, *col);
     oled_write_data(FONT5x7[c - 32], 5);

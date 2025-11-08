@@ -80,7 +80,7 @@ typedef struct __attribute__((packed)) {
   uint32_t buttons;
 } gamepad_report_t;
 
-static inline bool is_pressed(uint pin, int idx) {
+static bool is_pressed(uint pin, int idx) {
   static bool is_stable[BTN_COUNT];
   static bool was_pressed[BTN_COUNT];
   // next time a press is allowed
@@ -182,7 +182,7 @@ static void core1_main() {
   }
 }
 
-static inline void build_led_frame(led_frame* out, const bool pressed[]) {
+static void build_led_frame(led_frame* out, const bool pressed[]) {
   for (uint i = 0; i < LED_BTN_COUNT; ++i) {
     uint8_t r = BTN_CFG[i].r;
     uint8_t g = BTN_CFG[i].g;
@@ -198,11 +198,11 @@ static inline void build_led_frame(led_frame* out, const bool pressed[]) {
   }
 }
 
-static inline bool same_frame(const led_frame* a, const led_frame* b) {
+static bool same_frame(const led_frame* a, const led_frame* b) {
   return memcmp(a, b, sizeof(*a)) == 0;
 }
 
-static inline uint32_t read_buttons(bool* pressed_led) {
+static uint32_t read_buttons(bool* pressed_led) {
   static dpad_state dpad = {0};
   static bool held[BTN_COUNT] = {0};
   uint32_t bmask = 0;
