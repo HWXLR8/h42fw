@@ -8,9 +8,7 @@ pico_sdk_init()
 
 add_executable(h42fw
     src/main.c
-    src/oled.c
     src/usb_descriptors.c
-    src/cfg.c
 )
 set_target_properties(h42fw PROPERTIES SUFFIX ".elf")
 pico_generate_pio_header(h42fw ${CMAKE_CURRENT_LIST_DIR}/lib/ws2812.pio)
