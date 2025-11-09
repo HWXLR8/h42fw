@@ -1,7 +1,7 @@
-Custom FW for Haute42 leverless gamepads. The goals of this project are:
-1. Minimal latency.
-2. Support for all HW features on Haute42 (all buttons/LEDs/OLED).
-3. Simple user configuration.
+Custom FW for Haute42 S16.
+
+### Input Latency
+Average latency is `0.814 ms` measured using the methodology described on [inputlag.science](http://inputlag.science)
 
 ### Feature list
 
