@@ -18,6 +18,13 @@
 
 
 typedef enum {
+  PLAY,
+  CFG_TURBO,
+} CTRL_STATE;
+CTRL_STATE CSTATE = PLAY;
+
+
+typedef enum {
   NEUTRAL,    // L+R = 0 or U+D = 0
   LAST_INPUT, // last input wins
 } SOCD_MODE;
@@ -28,7 +35,7 @@ typedef enum {
   CMD_NONE = 0,
   CMD_TOGGLE_OLED = 1,
   CMD_TOGGLE_LEDS = 2,
-} FIFO_COMD;
+} FIFO_CMD;
 
 
 typedef enum {
@@ -48,11 +55,11 @@ typedef enum {
   B11,
   B12,
   UP,
+  TURBO,
   B13,
   B14,
   B15,
   B16,
-  B17,
 } BTN_BIT;
 
 
@@ -97,11 +104,11 @@ static const btn_cfg BTN_CFG[] = {
   {19,    B12,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
   {26,    UP,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
   // no LEDs
-  {14,    B13,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {21,    B14,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {20,    B15,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {16,    B16,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {17,    B17,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {14,    TURBO,   0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {21,    B13,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {20,    B14,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {16,    B15,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {17,    B16,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
 };
 
 
@@ -139,7 +146,7 @@ pad_cfg cfg;
 
 
 typedef struct {
-  uint8_t rgb[LED_BTN_COUNT][3];
+  uint32_t rgb[LED_BTN_COUNT][3];
 } led_frame;
 
 
@@ -152,6 +159,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
   bool active;
+  bool triggered;
   uint32_t btns;
   absolute_time_t expiry;
 } timer;
@@ -169,16 +177,6 @@ typedef struct {
   absolute_time_t duration;
   combo_action action;
 } combo;
-
-
-static void act_bootsel() {
-  reset_usb_boot(0, 0);
-}
-
-
-static const combo combos[] = {
-  {(1 << B8) | (1 << B9), 0, act_bootsel},
-};
 
 
 // set cfg to sane defaults
@@ -427,7 +425,7 @@ static bool is_pressed(uint pin, int idx) {
 }
 
 
-static void build_led_frame(led_frame* out, const bool pressed[]) {
+static void build_led_frame(led_frame* out, const bool* pressed) {
   for (uint i = 0; i < LED_BTN_COUNT; ++i) {
     uint8_t r = BTN_CFG[i].r;
     uint8_t g = BTN_CFG[i].g;
@@ -444,32 +442,60 @@ static void build_led_frame(led_frame* out, const bool pressed[]) {
 }
 
 
+static void act_bootsel() {
+  reset_usb_boot(0, 0);
+}
+
+
+static void act_led_toggle() {
+  multicore_fifo_push_timeout_us(CMD_TOGGLE_LEDS, 0);
+}
+
+
+static void act_oled_toggle() {
+  multicore_fifo_push_timeout_us(CMD_TOGGLE_OLED, 0);
+}
+
+
+static void act_turbo() {
+  CSTATE = CFG_TURBO;
+}
+
+
+static const combo combos[] = {
+  {(1 << B8) | (1 << B9), 0,       act_bootsel},
+  {(1 << B13),            500,     act_led_toggle},
+  {(1 << B14),            500,     act_oled_toggle},
+  {(1 << TURBO),          0,       act_turbo},
+};
+
+
 static void read_button_combos(uint32_t bmask) {
   static timer t = {0};
 
-  size_t len = sizeof combos / sizeof combos[0];
-  for (size_t i = 0; i < len; ++i) {
+  for (size_t i = 0; i < (sizeof combos / sizeof combos[0]); ++i) {
     uint32_t btns = combos[i].btns;
+
     if (bmask == btns) {
-      // if the current timer is for a different combo, disable it
-      if (t.btns != btns) {
-        t.active = false;
-      }
-      // arm timer if inactive
-      if (!t.active) {
+      // arm timer only if we were not tracking this combo this will
+      // overwrite any existing timers which did not reach expiry
+      if (!t.active || t.btns != btns) {
         t.active = true;
+        t.triggered = false;
         t.btns = btns;
         t.expiry = delayed_by_us(get_absolute_time(), combos[i].duration);
       }
       // execute action
-      if (get_absolute_time() > t.expiry) {
-        reset_usb_boot(0, 0);
-        t.active = false;
+      if (!t.triggered && get_absolute_time() > t.expiry) {
+        combos[i].action();
+        t.triggered = true;
       }
     } else {
       // disable timer if we release
       if (t.btns == btns) {
         t.active = false;
+        t.triggered = false;
+        t.btns = 0;
       }
     }
   }
@@ -496,21 +522,6 @@ static uint32_t read_buttons(bool* pressed_led) {
       if (bit == UP)    {if (dpad.u == 0) dpad.u = ++dpad.time;}
       if (bit == DOWN)  {if (dpad.d == 0) dpad.d = ++dpad.time;}
 
-      // LED toggle
-      if (p == LED_TOGGLE_PIN) {
-        if (!held[i]) {
-          multicore_fifo_push_timeout_us(CMD_TOGGLE_LEDS, 0);
-        }
-        held[i] = true;
-      }
-
-      // OLED toggle
-      if (p == OLED_TOGGLE_PIN) {
-        if (!held[i]) {
-          multicore_fifo_push_timeout_us(CMD_TOGGLE_OLED, 0);
-        }
-        held[i] = true;
-      }
     } else {
       if (bit == LEFT)  dpad.l = 0;
       if (bit == RIGHT) dpad.r = 0;
@@ -579,10 +590,22 @@ static uint32_t read_buttons(bool* pressed_led) {
 static queue_t ledq;
 
 
+static void set_leds(PIO pio, uint sm, led_frame* f) {
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    uint32_t color = (f->rgb[i][1] << 16 | // G
+                      f->rgb[i][0] << 8  | // R
+                      f->rgb[i][2]);       // B
+    pio_sm_put_blocking(pio, sm, color << 8);
+  }
+  sleep_us(LATCH_TIME);
+}
+
+
 static void core1_main() {
   bool leds_on = true;
   bool oled_on = true;
   led_frame fcache = {0};
+  led_frame null_frame = {0};
 
   // init oled
   oled_init();
@@ -604,48 +627,39 @@ static void core1_main() {
 
   led_frame f;
   while (true) {
-    // update oled
-    oled_anim_tick(&anim);
+    if (CSTATE == PLAY) {
+      // update oled
+      oled_anim_tick(&anim);
 
-    // drain FIFO
-    while (multicore_fifo_rvalid()) {
-      uint32_t cmd = multicore_fifo_pop_blocking();
-      if (cmd == CMD_TOGGLE_OLED) {
-        oled_sleep(oled_on);
-        oled_on = !oled_on;
-      } else if (cmd == CMD_TOGGLE_LEDS) {
-        leds_on = !leds_on;
-        // shut off LEDs
-        if (!leds_on) {
-          for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-            pio_sm_put_blocking(pio, sm, 0);
+      // drain FIFO
+      while (multicore_fifo_rvalid()) {
+        uint32_t cmd = multicore_fifo_pop_blocking();
+        if (cmd == CMD_TOGGLE_OLED) {
+          oled_sleep(oled_on);
+          oled_on = !oled_on;
+        } else if (cmd == CMD_TOGGLE_LEDS) {
+          leds_on = !leds_on;
+          // shut off LEDs
+          if (!leds_on) {
+            set_leds(pio, sm, &null_frame);
+          } else {
+            // restore from cache
+            set_leds(pio, sm, &fcache);
           }
-          sleep_us(LATCH_TIME);
-        } else {
-          // restore from cache
-          for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-            uint32_t color =
-              ((uint32_t)fcache.rgb[i][1] << 16) |
-              ((uint32_t)fcache.rgb[i][0] << 8)  |
-              (uint32_t) fcache.rgb[i][2];
-            pio_sm_put_blocking(pio, sm, color << 8);
-          }
-          sleep_us(LATCH_TIME);
         }
       }
-    }
 
-    if (queue_try_remove(&ledq, &f)) {
-      // cache the frame
-      fcache = f;
-      for (uint i = 0; i < LED_BTN_COUNT; ++i) {
-        uint8_t r = leds_on ? f.rgb[i][0] : 0;
-        uint8_t g = leds_on ? f.rgb[i][1] : 0;
-        uint8_t b = leds_on ? f.rgb[i][2] : 0;
-        uint32_t color = ((uint32_t)g << 16) | ((uint32_t)r << 8) | (uint32_t)b;
-        pio_sm_put_blocking(pio, sm, color << 8);
+      if (queue_try_remove(&ledq, &f)) {
+        // cache the frame
+        fcache = f;
+        if (!leds_on) {
+          set_leds(pio, sm, &null_frame);
+        } else {
+          set_leds(pio, sm, &f);
+        }
       }
-      sleep_us(LATCH_TIME);
+    } else if (CSTATE == CFG_TURBO) {
+
     }
   }
 }
@@ -672,11 +686,13 @@ int main() {
     memset(pressed_led, 0, sizeof(pressed_led));
     uint32_t bits = read_buttons(pressed_led);
 
-    // send HID report
-    if (tud_hid_ready() && bits != prev_bits) {
-      gamepad_report rpt = {.buttons = bits};
-      tud_hid_report(0, &rpt, sizeof(rpt));
-      prev_bits = bits;
+    if (CSTATE == PLAY) {
+      // send HID report
+      if (tud_hid_ready() && bits != prev_bits) {
+        gamepad_report rpt = {.buttons = bits};
+        tud_hid_report(0, &rpt, sizeof(rpt));
+        prev_bits = bits;
+      }
     }
 
     // enqueue LED frame only if LEDs changed
