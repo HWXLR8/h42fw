@@ -22,4 +22,4 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 | OLED Images      | ✅    |                                             |
 | OLED Animations  | ✅    |                                             |
 | Live config      | ⚠️    | LED/OLED toggle only.                       |
-| Turbo            | ❌    |                                             |
+| Turbo            | ✅    | 15.6/31.25/62.5Hz configurable per button. |
