@@ -653,6 +653,35 @@ static void set_leds(PIO pio, uint sm, led_frame* f) {
 }
 
 
+static void process_turbo(uint32_t* bits) {
+  uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    TURBO_RATE rate = BTN_CFG[i].turbo;
+    // skip buttons with turbo disabled
+    if (rate == TURBO_0HZ) continue;
+    uint32_t mask = 1u << BTN_CFG[i].bit;
+    // skip buttons which are not pressed
+    if ((*bits & mask) == 0) continue;
+    // is turbo "on" at this moment?
+
+    bool active = false;
+    switch (rate) {
+    case TURBO_15HZ: active = ((now_ms >> 5) & 1u) == 0; break; // period 64ms, ~15.6 Hz
+    case TURBO_30HZ: active = ((now_ms >> 4) & 1u) == 0; break; // period 32ms, ~31.25 Hz
+    case TURBO_60HZ: active = ((now_ms >> 3) & 1u) == 0; break; // period 16 ms, ~62.5 Hz
+    case TURBO_0HZ:
+    default: active = true;
+    }
+
+    if (active) {
+      *bits |= mask;
+    } else {
+      *bits &= ~mask;
+    }
+  }
+}
+
+
 static void core1_main() {
   CTRL_STATE prev_cstate = CSTATE;
   bool leds_on = true;
@@ -729,7 +758,6 @@ static void core1_main() {
       oled_print(3, 0, "ORANGE LED = 30Hz");
       oled_print(4, 0, "YELLOW LED = 15Hz");
       oled_print(5, 0, "OFF LED    = OFF");
-      oled_print(7, 0, "PRESS TURBO TO EXIT");
     }
   }
 }
@@ -760,6 +788,8 @@ int main() {
     uint32_t bits = read_buttons(pressed_led, &raw_bits);
 
     if (CSTATE == PLAY) {
+      process_turbo(&bits);
+
       // send HID report
       if (tud_hid_ready() && bits != prev_bits) {
         gamepad_report rpt = {.buttons = bits};
