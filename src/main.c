@@ -23,6 +23,13 @@ typedef enum {
 } CTRL_STATE;
 CTRL_STATE CSTATE = PLAY;
 
+typedef enum {
+  TURBO_0HZ,
+  TURBO_15HZ,
+  TURBO_30HZ,
+  TURBO_60HZ,
+} TURBO_RATE;
+
 
 typedef enum {
   NEUTRAL,    // L+R = 0 or U+D = 0
@@ -33,8 +40,8 @@ SOCD_MODE SOCD = LAST_INPUT;
 
 typedef enum {
   CMD_NONE = 0,
-  CMD_TOGGLE_OLED = 1,
-  CMD_TOGGLE_LEDS = 2,
+  CMD_TOGGLE_OLED,
+  CMD_TOGGLE_LEDS,
 } FIFO_CMD;
 
 
@@ -64,11 +71,12 @@ typedef enum {
 
 
 typedef struct {
-  uint pin;        // MCU pin
-  uint bit;        // bit in the HID report
-  uint r, g, b;    // idle color
-  uint rp, gp, bp; // pressed color
-  uint debounce;   // debounce time
+  uint pin;         // MCU pin
+  uint bit;         // bit in the HID report
+  uint r, g, b;     // idle color
+  uint rp, gp, bp;  // pressed color
+  uint debounce;    // debounce time
+  TURBO_RATE turbo; // turbo rate
 } btn_cfg;
 
 
@@ -84,31 +92,30 @@ typedef struct {
 //
 // To remap buttons, only change the second field. Buttons with no
 // LEDs must always be placed at the end.
-static const btn_cfg BTN_CFG[] = {
-  /*
-   pin    button   idle RGB   press RGB     debounce time */
-  {5,     LEFT,    5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {3,     DOWN,    5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {4,     RIGHT,   5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {2,     B1,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {10,    B2,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {11,    B3,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {12,    B4,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {13,    B5,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {6,     B6,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {7,     B7,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {8,     B8,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {9,     B9,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {27,    B10,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {18,    B11,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {19,    B12,     5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
-  {26,    UP,      5, 0, 5,   100, 0, 100,  KEY_DEBOUNCE},
+static btn_cfg BTN_CFG[] = {
+// pin   button  idle RGB      press RGB     debounce time  turbo
+  {5,    LEFT,     5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {3,    DOWN,     5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {4,    RIGHT,    5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {2,    B1,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {10,   B2,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {11,   B3,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {12,   B4,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {13,   B5,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {6,    B6,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {7,    B7,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {8,    B8,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {9,    B9,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {27,   B10,      5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {18,   B11,      5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {19,   B12,      5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
+  {26,   UP,       5,  0,  5,  100,  0,100,  KEY_DEBOUNCE,  TURBO_0HZ},
   // no LEDs
-  {14,    TURBO,   0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {21,    B13,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {20,    B14,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {16,    B15,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
-  {17,    B16,     0, 0, 0,   0, 0, 0,      TAC_DEBOUNCE},
+  {14,   TURBO,    0,  0,  0,    0,  0,  0,  TAC_DEBOUNCE,  TURBO_0HZ},
+  {21,   B13,      0,  0,  0,    0,  0,  0,  TAC_DEBOUNCE,  TURBO_0HZ},
+  {20,   B14,      0,  0,  0,    0,  0,  0,  TAC_DEBOUNCE,  TURBO_0HZ},
+  {16,   B15,      0,  0,  0,    0,  0,  0,  TAC_DEBOUNCE,  TURBO_0HZ},
+  {17,   B16,      0,  0,  0,    0,  0,  0,  TAC_DEBOUNCE,  TURBO_0HZ},
 };
 
 
@@ -267,11 +274,28 @@ static void oled_set_cursor(uint8_t page, uint8_t col) {
 
 
 void oled_clear(void) {
-  static const uint8_t Z[WIDTH] = {0}; // zero buffer
-  for (uint8_t p = 0; p < (HEIGHT/8); ++p) {
-    oled_set_cursor(p, 0);
-    oled_write_data(Z, sizeof Z);
-  }
+  static const uint8_t Z[1024] = {0};
+
+  // set column range 0 -> 127
+  oled_write_cmd(0x21);
+  oled_write_cmd(0x00);
+  oled_write_cmd(0x7F);
+
+  // set page range 0 -> 7
+  oled_write_cmd(0x22);
+  oled_write_cmd(0x00);
+  oled_write_cmd(0x07);
+
+  // horizontal addressing mode
+  oled_write_cmd(0x20);
+  oled_write_cmd(0x00);
+
+  // send all zeros at once
+  oled_write_data(Z, 1024);
+
+  // restore page addressing mode
+  oled_write_cmd(0x20);
+  oled_write_cmd(0x02);
 }
 
 
@@ -400,32 +424,33 @@ void init_btns() {
 }
 
 
+// checks button state, filtered via rising edge debouncing.
 static bool is_pressed(uint pin, int idx) {
-  static bool is_stable[BTN_COUNT];
-  static bool was_pressed[BTN_COUNT];
+  static bool debounced[BTN_COUNT] = {0};
   // next time a press is allowed
-  static absolute_time_t unlock_time[BTN_COUNT];
+  static absolute_time_t lock_until[BTN_COUNT];
 
-  bool pressed = (gpio_get(pin) == 0);
+  bool raw = (gpio_get(pin) == 0); // active low
   absolute_time_t now = get_absolute_time();
 
-  // accept first input
-  if (pressed &&
-      absolute_time_diff_us(now, unlock_time[idx]) <= 0) {
-    is_stable[idx] = true;
+  bool lock_expired = absolute_time_diff_us(now, lock_until[idx]) <= 0;
+
+  if (lock_expired) {
+    // accept first input
+    if (!debounced[idx] && raw) {
+      debounced[idx] = true;
+      lock_until[idx] = delayed_by_us(now, BTN_CFG[idx].debounce);
+    } else if (debounced[idx] && !raw) { // release
+      debounced[idx] = false;
+      lock_until[idx] = delayed_by_us(now, BTN_CFG[idx].debounce);
+    }
   }
 
-  if (!pressed && was_pressed[idx]) {
-    unlock_time[idx] = delayed_by_us(now, BTN_CFG[idx].debounce);
-    is_stable[idx] = false;
-  }
-
-  was_pressed[idx] = pressed;
-  return is_stable[idx];
+  return debounced[idx];
 }
 
 
-static void build_led_frame(led_frame* out, const bool* pressed) {
+static void build_play_frame(led_frame* f, const bool* pressed) {
   for (uint i = 0; i < LED_BTN_COUNT; ++i) {
     uint8_t r = BTN_CFG[i].r;
     uint8_t g = BTN_CFG[i].g;
@@ -435,9 +460,32 @@ static void build_led_frame(led_frame* out, const bool* pressed) {
       g = BTN_CFG[i].gp;
       b = BTN_CFG[i].bp;
     }
-    out->rgb[i][0] = r;
-    out->rgb[i][1] = g;
-    out->rgb[i][2] = b;
+    f->rgb[i][0] = r;
+    f->rgb[i][1] = g;
+    f->rgb[i][2] = b;
+  }
+}
+
+
+static void build_turbo_frame(led_frame* f) {
+  for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+    if (BTN_CFG[i].turbo == TURBO_0HZ) {
+      f->rgb[i][0] = 0; // r
+      f->rgb[i][1] = 0; // g
+      f->rgb[i][2] = 0; // b
+    } else if (BTN_CFG[i].turbo == TURBO_15HZ) {
+      f->rgb[i][0] = 255;
+      f->rgb[i][1] = 150;
+      f->rgb[i][2] = 0;
+    } else if (BTN_CFG[i].turbo == TURBO_30HZ) {
+      f->rgb[i][0] = 255;
+      f->rgb[i][1] = 80;
+      f->rgb[i][2] = 0;
+    } else if (BTN_CFG[i].turbo == TURBO_60HZ) {
+      f->rgb[i][0] = 255;
+      f->rgb[i][1] = 0;
+      f->rgb[i][2] = 0;
+    }
   }
 }
 
@@ -466,7 +514,7 @@ static const combo combos[] = {
   {(1 << B8) | (1 << B9), 0,       act_bootsel},
   {(1 << B13),            500,     act_led_toggle},
   {(1 << B14),            500,     act_oled_toggle},
-  {(1 << TURBO),          0,       act_turbo},
+  {(1 << TURBO),          500,     act_turbo},
 };
 
 
@@ -502,7 +550,7 @@ static void read_button_combos(uint32_t bmask) {
 }
 
 
-static uint32_t read_buttons(bool* pressed_led) {
+static uint32_t read_buttons(bool* pressed_led, uint32_t* raw_bits) {
   static dpad_state dpad = {0};
   static bool held[BTN_COUNT] = {0};
   uint32_t bmask = 0;
@@ -561,6 +609,10 @@ static uint32_t read_buttons(bool* pressed_led) {
     pressed_led[i] = ((bmask >> BTN_CFG[i].bit) & 1u) != 0;
   }
 
+  // send raw bits out for used by other states like CFG_TURBO
+  if (raw_bits) *raw_bits = bmask;
+
+
   // get hat bits
   uint32_t dir = bmask & ((1u << UP) |
                           (1u << RIGHT) |
@@ -602,6 +654,7 @@ static void set_leds(PIO pio, uint sm, led_frame* f) {
 
 
 static void core1_main() {
+  CTRL_STATE prev_cstate = CSTATE;
   bool leds_on = true;
   bool oled_on = true;
   led_frame fcache = {0};
@@ -611,10 +664,6 @@ static void core1_main() {
   oled_init();
   oled_clear();
   oled_blit_img(IMG128x64);
-  /* oled_print(0, 0, "BEATMANIA IS NOT COOL"); */
-  /* oled_print(1, 0, "IT'S NOT FUN"); */
-  /* oled_print(2, 0, "IT'S NOT FRESH"); */
-  /* oled_print(3, 0, "IT'S NOT GOOD"); */
 
   static oled_anim anim;
   oled_anim_init(&anim, ANIM_FRAMES, ANIM_NUM_FRAMES, ANIM_FRAME_MS);
@@ -628,6 +677,13 @@ static void core1_main() {
   led_frame f;
   while (true) {
     if (CSTATE == PLAY) {
+      // clear OLED on state change
+      if (prev_cstate != PLAY) {
+        oled_clear();
+        set_leds(pio, sm, &fcache);
+        prev_cstate = PLAY;
+      }
+
       // update oled
       oled_anim_tick(&anim);
 
@@ -659,7 +715,21 @@ static void core1_main() {
         }
       }
     } else if (CSTATE == CFG_TURBO) {
+      build_turbo_frame(&f);
+      set_leds(pio, sm, &f);
 
+      // clear OLED on state change
+      if (prev_cstate != CFG_TURBO) {
+        oled_clear();
+        prev_cstate = CFG_TURBO;
+      }
+      oled_print(0, 0, "- TURBO CONFIG MODE -");
+      oled_print(1, 0, "");
+      oled_print(2, 0, "RED LED    = 60Hz");
+      oled_print(3, 0, "ORANGE LED = 30Hz");
+      oled_print(4, 0, "YELLOW LED = 15Hz");
+      oled_print(5, 0, "OFF LED    = OFF");
+      oled_print(7, 0, "PRESS TURBO TO EXIT");
     }
   }
 }
@@ -680,11 +750,14 @@ int main() {
   uint32_t prev_bits = 0;
   led_frame last_sent = {0};
 
+  bool was_pressed[BTN_COUNT] = {0};
+
   while (true) {
     tud_task();
 
     memset(pressed_led, 0, sizeof(pressed_led));
-    uint32_t bits = read_buttons(pressed_led);
+    uint32_t raw_bits;
+    uint32_t bits = read_buttons(pressed_led, &raw_bits);
 
     if (CSTATE == PLAY) {
       // send HID report
@@ -693,22 +766,34 @@ int main() {
         tud_hid_report(0, &rpt, sizeof(rpt));
         prev_bits = bits;
       }
-    }
 
-    // enqueue LED frame only if LEDs changed
-    led_frame f;
-    build_led_frame(&f, pressed_led);
+      // enqueue LED frame only if LEDs changed
+      led_frame f;
+      build_play_frame(&f, pressed_led);
 
-    // if this frame different from last
-    if (memcmp(&f, &last_sent, sizeof(f)) != 0) {
-      // try to enqueue
-      if (!queue_try_add(&ledq, &f)) {
-        led_frame scratch;
-        // free one slot
-        queue_try_remove(&ledq, &scratch);
-        queue_try_add(&ledq, &f);
+      // if this frame different from last
+      if (memcmp(&f, &last_sent, sizeof(f)) != 0) {
+        // try to enqueue
+        if (!queue_try_add(&ledq, &f)) {
+          led_frame scratch;
+          // free one slot
+          queue_try_remove(&ledq, &scratch);
+          queue_try_add(&ledq, &f);
+        }
+        last_sent = f;
       }
-      last_sent = f;
+    } else if (CSTATE == CFG_TURBO) {
+      for (uint i = 0; i < LED_BTN_COUNT; ++i) {
+        bool pressed = (raw_bits >> BTN_CFG[i].bit) & 1u;
+        if (pressed && !was_pressed[i]) {
+          BTN_CFG[i].turbo = (BTN_CFG[i].turbo + 1) % 4;
+        }
+        was_pressed[i] = pressed;
+      }
+      // check if TURBO was released
+      if (!(raw_bits & (1 << TURBO))) {
+        CSTATE = PLAY;
+      }
     }
   }
   return 0;

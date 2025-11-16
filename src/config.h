@@ -8,8 +8,8 @@
 #define OLED_TOGGLE_PIN 20
 #define BOOTSEL_PIN     14
 #define LATCH_TIME      350 // us
-#define TAC_DEBOUNCE    500 // us
-#define KEY_DEBOUNCE    500 // us
+#define TAC_DEBOUNCE    8000 // us
+#define KEY_DEBOUNCE    8000 // us
 
 // HID metadata
 #define VENDOR_ID    0xBEEF
