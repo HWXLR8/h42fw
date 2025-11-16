@@ -5,21 +5,22 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 
 ### Feature list
 
-| Feature          | State | Notes                                       |
-|:-----------------|:-----:|:--------------------------------------------|
-| HID Gamepad      | ✅    | Tested on Linux and Windows (DirectInput).  |
-| HID Keyboard     | ❌    |                                             |
-| XInput           | ❌    |                                             |
-| Console Support  | ❌    |                                             |
-| 1000Hz Polling   | ✅    |                                             |
-| Button Remap     | ✅    |                                             |
-| Button Debounce  | ✅    | Leading-edge, configurable per-button.      |
-| SOCD Cleaning    | ⚠️    | Neutral/Last-input only.                    |
-| LED Support      | ✅    | Per-button LED config for idle/press color. |
-| LED Brightness   | ⚠️    | Only on/off toggle.                         |
-| LED Animations   | ⚠️    | Button illumination on press only.          |
-| OLED Support     | ✅    |                                             |
-| OLED Images      | ✅    |                                             |
-| OLED Animations  | ✅    |                                             |
-| Live config      | ⚠️    | LED/OLED toggle only.                       |
-| Turbo            | ✅    | 15.6/31.25/62.5Hz configurable per button. |
+| Feature              | State | Notes                                       |
+|:---------------------|:-----:|:--------------------------------------------|
+| HID Gamepad          | ✅    | Tested on Linux and Windows (DirectInput).  |
+| HID Keyboard         | ❌    |                                             |
+| XInput               | ❌    |                                             |
+| Console Support      | ❌    |                                             |
+| 1000Hz Polling       | ✅    |                                             |
+| Button Remap         | ✅    |                                             |
+| Button Debounce      | ✅    | Leading-edge, configurable per-button.      |
+| SOCD Cleaning        | ⚠️    | Neutral/Last-input only.                    |
+| LED Support          | ✅    | Per-button LED config for idle/press color. |
+| LED Brightness       | ⚠️    | Only on/off toggle.                         |
+| LED Animations       | ⚠️    | Button illumination on press only.          |
+| OLED Support         | ✅    |                                             |
+| OLED Images          | ✅    |                                             |
+| OLED Animations      | ✅    |                                             |
+| Live config          | ⚠️    | Turbo, LED/OLED toggle only.                |
+| Persistent Settings  | ❌    |                                             |
+| Turbo                | ✅    | 15.6/31.25/62.5Hz configurable per button.  |
