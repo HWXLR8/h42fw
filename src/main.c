@@ -23,6 +23,7 @@ typedef enum {
 } CTRL_STATE;
 CTRL_STATE CSTATE = PLAY;
 
+
 typedef enum {
   TURBO_0HZ,
   TURBO_15HZ,
@@ -709,7 +710,11 @@ static void core1_main() {
       // clear OLED on state change
       if (prev_cstate != PLAY) {
         oled_clear();
-        set_leds(pio, sm, &fcache);
+        if (leds_on) {
+          set_leds(pio, sm, &fcache);
+        } else {
+          set_leds(pio, sm, &null_frame);
+        }
         prev_cstate = PLAY;
       }
 
