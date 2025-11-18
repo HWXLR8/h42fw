@@ -17,6 +17,15 @@
 #include "font/font5x7.h"
 
 
+volatile uint32_t core1_cmd_mask = 0;
+
+
+enum {
+  CORE1_CMD_TOGGLE_OLED = 1u << 0,
+  CORE1_CMD_TOGGLE_LEDS = 1u << 1,
+};
+
+
 typedef enum {
   PLAY,
   CFG_TURBO,
@@ -37,13 +46,6 @@ typedef enum {
   LAST_INPUT, // last input wins
 } SOCD_MODE;
 SOCD_MODE SOCD = LAST_INPUT;
-
-
-typedef enum {
-  CMD_NONE = 0,
-  CMD_TOGGLE_OLED,
-  CMD_TOGGLE_LEDS,
-} FIFO_CMD;
 
 
 typedef enum {
@@ -81,6 +83,19 @@ typedef struct {
 } btn_cfg;
 
 
+typedef struct __attribute__((packed)) { // force 1B alignment of members
+  uint32_t magic;
+  uint16_t version;
+  uint8_t  enable_leds;
+  uint8_t  enable_oled;
+  // padding accounting for each of the above members
+  uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1];
+} pad_cfg;
+
+
+pad_cfg cfg;
+bool leds_on = true;
+bool oled_on = true;
 // When remapping buttons, the pin ordering of elements must remain
 // unchanged since it corresponds to the order in which the LEDs are
 // laid out on the gamepad.
@@ -142,17 +157,6 @@ typedef struct {
 } oled_anim;
 
 
-typedef struct __attribute__((packed)) { // force 1B alignment of members
-  uint32_t magic;
-  uint16_t version;
-  uint8_t  enable_leds;
-  uint8_t  enable_oled;
-  // padding accounting for each of the above members
-  uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1];
-} pad_cfg;
-pad_cfg cfg;
-
-
 typedef struct {
   uint32_t rgb[LED_BTN_COUNT][3];
 } led_frame;
@@ -188,36 +192,50 @@ typedef struct {
 
 
 // set cfg to sane defaults
-static void init_cfg(pad_cfg* c) {
-  memset(c, 0, sizeof(*c)); // zero all fields
-  c->magic = MAGIC;
-  c->version = VERSION;
-  c->enable_leds = 1;
-  c->enable_oled = 1;
+static void cfg_init() {
+  memset(&cfg, 0, sizeof(cfg)); // zero all fields
+  cfg.magic = MAGIC;
+  cfg.version = VERSION;
+  cfg.enable_leds = 1;
+  cfg.enable_oled = 1;
 }
 
 
-bool cfg_load(pad_cfg* cfg) {
+bool cfg_load() {
   // return a pointer to the cfg region in XIP
   const pad_cfg* f = (const pad_cfg*)(XIP_BASE + NVM_OFFSET);
+  // did we find a valid config?
   if (f->magic == MAGIC && f->version == VERSION) {
-    memcpy(cfg, f, sizeof(*cfg));
+    memcpy(&cfg, f, sizeof(cfg));
     return true;
   }
-  init_cfg(cfg);
+  // set defaults
+  cfg_init();
   return false;
 }
 
 
-void cfg_save(const pad_cfg* cfg) {
-  // temporary buffer
+// apply the settings from cfg
+void cfg_apply() {
+  leds_on = cfg.enable_leds;
+  oled_on = cfg.enable_oled;
+}
+
+
+void cfg_save(void) {
   uint8_t page[FLASH_PAGE_SIZE] = {0};
-  memcpy(page, cfg, sizeof(*cfg));
+  memcpy(page, &cfg, sizeof(cfg));
+
+  // block core1 from running code from flash
+  multicore_lockout_start_blocking();
 
   uint32_t irq = save_and_disable_interrupts();
   flash_range_erase(NVM_OFFSET, FLASH_SECTOR_SIZE);
   flash_range_program(NVM_OFFSET, page, FLASH_PAGE_SIZE);
   restore_interrupts(irq);
+
+  // unblock core1
+  multicore_lockout_end_blocking();
 }
 
 
@@ -497,25 +515,28 @@ static void act_bootsel() {
 
 
 static void act_led_toggle() {
-  multicore_fifo_push_timeout_us(CMD_TOGGLE_LEDS, 0);
+  core1_cmd_mask |= CORE1_CMD_TOGGLE_LEDS;
+  cfg.enable_leds ^= 1;
 }
 
 
 static void act_oled_toggle() {
-  multicore_fifo_push_timeout_us(CMD_TOGGLE_OLED, 0);
+  core1_cmd_mask |= CORE1_CMD_TOGGLE_OLED;
+  cfg.enable_oled ^= 1;
 }
 
 
 static void act_turbo() {
-  CSTATE = CFG_TURBO;
+  CSTATE = (CSTATE == PLAY) ? CFG_TURBO : PLAY;
 }
 
 
 static const combo combos[] = {
-  {(1 << B8) | (1 << B9), 0,       act_bootsel},
-  {(1 << B13),            500,     act_led_toggle},
-  {(1 << B14),            500,     act_oled_toggle},
-  {(1 << TURBO),          500,     act_turbo},
+  {(1 << B8)    | (1 << B9),  0,       act_bootsel},
+  {(1 << TURBO) | (1 << B13), 1000000, act_led_toggle},
+  {(1 << TURBO) | (1 << B14), 1000000, act_oled_toggle},
+  {(1 << TURBO) | (1 << B16), 1000000, cfg_save},
+  {(1 << TURBO),              1000000, act_turbo},
 };
 
 
@@ -684,9 +705,9 @@ static void process_turbo(uint32_t* bits) {
 
 
 static void core1_main() {
+  multicore_lockout_victim_init();
+
   CTRL_STATE prev_cstate = CSTATE;
-  bool leds_on = true;
-  bool oled_on = true;
   led_frame fcache = {0};
   led_frame null_frame = {0};
 
@@ -721,21 +742,20 @@ static void core1_main() {
       // update oled
       oled_anim_tick(&anim);
 
-      // drain FIFO
-      while (multicore_fifo_rvalid()) {
-        uint32_t cmd = multicore_fifo_pop_blocking();
-        if (cmd == CMD_TOGGLE_OLED) {
-          oled_sleep(oled_on);
-          oled_on = !oled_on;
-        } else if (cmd == CMD_TOGGLE_LEDS) {
-          leds_on = !leds_on;
-          // shut off LEDs
-          if (!leds_on) {
-            set_leds(pio, sm, &null_frame);
-          } else {
-            // restore from cache
-            set_leds(pio, sm, &fcache);
-          }
+      // process commands from core0
+      uint32_t cmd = core1_cmd_mask;
+      if (cmd & CORE1_CMD_TOGGLE_OLED) {
+        core1_cmd_mask &= ~CORE1_CMD_TOGGLE_OLED;
+        oled_sleep(oled_on);
+        oled_on = !oled_on;
+      }
+      if (cmd & CORE1_CMD_TOGGLE_LEDS) {
+        core1_cmd_mask &= ~CORE1_CMD_TOGGLE_LEDS;
+        leds_on = !leds_on;
+        if (!leds_on) {
+          set_leds(pio, sm, &null_frame);
+        } else {
+          set_leds(pio, sm, &fcache);
         }
       }
 
@@ -774,7 +794,8 @@ int main() {
   init_btns();
 
   // load config from flash
-  cfg_load(&cfg);
+  cfg_load();
+  cfg_apply();
 
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
@@ -824,10 +845,6 @@ int main() {
           BTN_CFG[i].turbo = (BTN_CFG[i].turbo + 1) % 4;
         }
         was_pressed[i] = pressed;
-      }
-      // check if TURBO was released
-      if (!(raw_bits & (1 << TURBO))) {
-        CSTATE = PLAY;
       }
     }
   }
