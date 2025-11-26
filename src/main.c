@@ -711,10 +711,14 @@ static void core1_main() {
   led_frame fcache = {0};
   led_frame null_frame = {0};
 
-  // init oled
+  // init OLED
   oled_init();
-  oled_clear();
-  oled_blit_img(IMG128x64);
+  if (!oled_on) {
+    oled_sleep(true);
+  } else {
+    oled_clear();
+    oled_blit_img(IMG128x64);
+  }
 
   static oled_anim anim;
   oled_anim_init(&anim, ANIM_FRAMES, ANIM_NUM_FRAMES, ANIM_FRAME_MS);
