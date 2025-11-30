@@ -732,9 +732,11 @@ static void core1_main() {
   led_frame f;
   while (true) {
     if (CSTATE == PLAY) {
-      // clear OLED on state change
+      // restore LED/OLED on CSTATE change
       if (prev_cstate != PLAY) {
         oled_clear();
+        oled_sleep(!oled_on);
+
         if (leds_on) {
           set_leds(pio, sm, &fcache);
         } else {
@@ -776,10 +778,11 @@ static void core1_main() {
       build_turbo_frame(&f);
       set_leds(pio, sm, &f);
 
-      // clear OLED on state change
+      // clear OLED and force it on
       if (prev_cstate != CFG_TURBO) {
         oled_clear();
         prev_cstate = CFG_TURBO;
+        oled_sleep(false);
       }
       oled_print(0, 0, "- TURBO CONFIG MODE -");
       oled_print(1, 0, "");
