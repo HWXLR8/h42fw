@@ -1,4 +1,4 @@
-PICOTOOL_PATH := ./picotool
+PICOTOOL_PATH := picotool
 PICO_SDK_PATH := ./pico-sdk
 UF2 := build/h42fw.uf2
 BIN := build/h42fw.bin

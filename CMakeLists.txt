@@ -9,6 +9,7 @@ pico_sdk_init()
 add_executable(h42fw
     src/main.c
     src/usb_descriptors.c
+    src/xinput.c
 )
 set_target_properties(h42fw PROPERTIES SUFFIX ".elf")
 pico_generate_pio_header(h42fw ${CMAKE_CURRENT_LIST_DIR}/lib/ws2812.pio)
@@ -25,6 +26,6 @@ target_link_libraries(h42fw
     hardware_i2c
 )
 
-pico_enable_stdio_usb(h42fw 1)
-pico_enable_stdio_uart(h42fw 0)
+pico_enable_stdio_usb(h42fw 0)
+pico_enable_stdio_uart(h42fw 1)
 pico_add_extra_outputs(h42fw)

@@ -10,14 +10,20 @@
 #include "ws2812.pio.h"
 #include "bsp/board.h"
 #include "tusb.h"
+#include "device/usbd_pvt.h"
 
 #include "config.h"
-#include OLED_IMG
-#include "anim.h"
+#include "xinput.h"
 #include "font/font5x7.h"
 
 
 volatile uint32_t core1_cmd_mask = 0;
+
+// Dummy OLED image/animation data (placeholders)
+static const uint8_t IMG128x64[1024] = {0};
+static const uint8_t ANIM_FRAMES[1][1024] = {{0}};
+#define ANIM_NUM_FRAMES 1
+#define ANIM_FRAME_MS 1000
 
 
 enum {
@@ -88,14 +94,16 @@ typedef struct __attribute__((packed)) { // force 1B alignment of members
   uint16_t version;
   uint8_t  enable_leds;
   uint8_t  enable_oled;
+  uint8_t  usb_mode;
   // padding accounting for each of the above members
-  uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1];
+  uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1 - 1];
 } pad_cfg;
 
 
 pad_cfg cfg;
 bool leds_on = true;
 bool oled_on = true;
+USB_MODE usb_mode = USB_MODE_HID;
 // When remapping buttons, the pin ordering of elements must remain
 // unchanged since it corresponds to the order in which the LEDs are
 // laid out on the gamepad.
@@ -169,6 +177,67 @@ typedef struct __attribute__((packed)) {
 } gamepad_report;
 
 
+// XInput endpoint tracking (defined later with driver)
+static uint8_t xinput_endpoint_in = 0;
+static uint8_t xinput_endpoint_out = 0;
+
+
+static void send_xinput_report(uint32_t bits) {
+  if (!tud_ready() || xinput_endpoint_in == 0 || usbd_edpt_busy(0, xinput_endpoint_in)) {
+    return;
+  }
+
+  // Set report size
+  xinput_data.rsize = 20;
+
+  // Map bits to XInput format
+  xinput_data.digital_buttons_1 = 0;
+  xinput_data.digital_buttons_2 = 0;
+
+  if (bits & (1 << UP))    xinput_data.digital_buttons_1 |= 0x01; // UP
+  if (bits & (1 << DOWN))  xinput_data.digital_buttons_1 |= 0x02; // DOWN
+  if (bits & (1 << LEFT))  xinput_data.digital_buttons_1 |= 0x04; // LEFT
+  if (bits & (1 << RIGHT)) xinput_data.digital_buttons_1 |= 0x08; // RIGHT
+
+  if (bits & (1 << B1))    xinput_data.digital_buttons_1 |= 0x10; // START
+  if (bits & (1 << B11))   xinput_data.digital_buttons_1 |= 0x10; // START
+  if (bits & (1 << B16))   xinput_data.digital_buttons_1 |= 0x10; // START
+
+  if (bits & (1 << B10))   xinput_data.digital_buttons_1 |= 0x20; // BACK
+  if (bits & (1 << B15))   xinput_data.digital_buttons_1 |= 0x20; // BACK
+
+  // if (bits & (1 << B15))   xinput_data.digital_buttons_1 |= 0x40; // L3
+  // if (bits & (1 << B16))   xinput_data.digital_buttons_1 |= 0x80; // R3
+
+  if (bits & (1 << B5))  xinput_data.digital_buttons_2 |= 0x01; // LB
+  if (bits & (1 << B4))  xinput_data.digital_buttons_2 |= 0x02; // RB
+  if (bits & (1 << B9))  xinput_data.digital_buttons_2 |= 0x04; // GUIDE
+
+  if (bits & (1 << B1))  xinput_data.digital_buttons_2 |= 0x10; // A
+  if (bits & (1 << B6))  xinput_data.digital_buttons_2 |= 0x10; // A
+  if (bits & (1 << B12)) xinput_data.digital_buttons_2 |= 0x10; // A
+
+  if (bits & (1 << B7))  xinput_data.digital_buttons_2 |= 0x20; // B
+
+  if (bits & (1 << B2))  xinput_data.digital_buttons_2 |= 0x40; // X
+  if (bits & (1 << B3))  xinput_data.digital_buttons_2 |= 0x80; // Y
+
+  // Triggers (mapped to buttons)
+  xinput_data.lt = (bits & (1 << B9)) ? 0xFF : 0x00;
+  xinput_data.rt = (bits & (1 << B8)) ? 0xFF : 0x00;
+
+  // Analog sticks (centered, could map to other buttons if needed)
+  xinput_data.l_x = 0;
+  xinput_data.l_y = 0;
+  xinput_data.r_x = 0;
+  xinput_data.r_y = 0;
+
+  usbd_edpt_claim(0, xinput_endpoint_in);
+  usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
+  usbd_edpt_release(0, xinput_endpoint_in);
+}
+
+
 typedef struct {
   bool active;
   bool triggered;
@@ -198,6 +267,7 @@ static void cfg_init() {
   cfg.version = VERSION;
   cfg.enable_leds = 1;
   cfg.enable_oled = 1;
+  cfg.usb_mode = USB_MODE_HID;
 }
 
 
@@ -219,6 +289,7 @@ bool cfg_load() {
 void cfg_apply() {
   leds_on = cfg.enable_leds;
   oled_on = cfg.enable_oled;
+  usb_mode = cfg.usb_mode;
 }
 
 
@@ -531,10 +602,17 @@ static void act_turbo() {
 }
 
 
+static void act_usb_mode_toggle() {
+  cfg.usb_mode = (cfg.usb_mode == USB_MODE_HID) ? USB_MODE_XINPUT : USB_MODE_HID;
+  cfg_save();
+}
+
+
 static const combo combos[] = {
   {(1 << B8)    | (1 << B9),  0,       act_bootsel},
   {(1 << TURBO) | (1 << B13), 1000000, act_led_toggle},
   {(1 << TURBO) | (1 << B14), 1000000, act_oled_toggle},
+  {(1 << TURBO) | (1 << B15), 1000000, act_usb_mode_toggle},
   {(1 << TURBO) | (1 << B16), 1000000, cfg_save},
   {(1 << TURBO),              1000000, act_turbo},
 };
@@ -797,12 +875,13 @@ static void core1_main() {
 
 int main() {
   board_init();
-  tusb_init();
   init_btns();
 
   // load config from flash
   cfg_load();
   cfg_apply();
+
+  tusb_init();
 
   queue_init(&ledq, sizeof(led_frame), 4);
   multicore_launch_core1(core1_main);
@@ -823,10 +902,16 @@ int main() {
     if (CSTATE == PLAY) {
       process_turbo(&bits);
 
-      // send HID report
-      if (tud_hid_ready() && bits != prev_bits) {
-        gamepad_report rpt = {.buttons = bits};
-        tud_hid_report(0, &rpt, sizeof(rpt));
+      // send report based on USB mode
+      if (bits != prev_bits || raw_bits != prev_bits) {
+        if (usb_mode == USB_MODE_XINPUT) {
+          send_xinput_report(raw_bits);
+        } else {
+          if (tud_hid_ready()) {
+            gamepad_report rpt = {.buttons = bits};
+            tud_hid_report(0, &rpt, sizeof(rpt));
+          }
+        }
         prev_bits = bits;
       }
 
@@ -878,4 +963,73 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id,
 
 void tud_hid_report_complete_cb(uint8_t itf, uint8_t const* report, uint16_t len) {
   (void)itf; (void)report; (void)len;
+}
+
+
+/* ---- XInput Driver Implementation ---- */
+
+static void xinput_driver_init(void) {
+  xinput_init_report();
+}
+
+static void xinput_driver_reset(uint8_t rhport) {
+  (void)rhport;
+  xinput_endpoint_in = 0;
+  xinput_endpoint_out = 0;
+}
+
+static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len) {
+  // +16 for the unknown XInput descriptor
+  uint16_t const drv_len = sizeof(tusb_desc_interface_t) + itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t) + 16;
+  TU_VERIFY(max_len >= drv_len, 0);
+
+  uint8_t const *p_desc = tu_desc_next(itf_desc);
+  uint8_t found_endpoints = 0;
+
+  while ((found_endpoints < itf_desc->bNumEndpoints) && (drv_len <= max_len)) {
+    tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)p_desc;
+    if (TUSB_DESC_ENDPOINT == tu_desc_type(desc_ep)) {
+      TU_ASSERT(usbd_edpt_open(rhport, desc_ep));
+
+      if (tu_edpt_dir(desc_ep->bEndpointAddress) == TUSB_DIR_IN) {
+        xinput_endpoint_in = desc_ep->bEndpointAddress;
+      } else {
+        xinput_endpoint_out = desc_ep->bEndpointAddress;
+      }
+      found_endpoints++;
+    }
+    p_desc = tu_desc_next(p_desc);
+  }
+  return drv_len;
+}
+
+static bool xinput_driver_control_xfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
+  (void)rhport; (void)stage; (void)request;
+  return true;
+}
+
+static bool xinput_driver_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
+  (void)rhport; (void)ep_addr; (void)result; (void)xferred_bytes;
+  return true;
+}
+
+static usbd_class_driver_t const xinput_driver = {
+#if CFG_TUSB_DEBUG >= 2
+  .name = "XINPUT",
+#endif
+  .init = xinput_driver_init,
+  .reset = xinput_driver_reset,
+  .open = xinput_driver_open,
+  .control_xfer_cb = xinput_driver_control_xfer,
+  .xfer_cb = xinput_driver_xfer_cb,
+  .sof = NULL
+};
+
+usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *driver_count) {
+  if (usb_mode == USB_MODE_XINPUT) {
+    *driver_count = 1;
+    return &xinput_driver;
+  }
+  *driver_count = 0;
+  return NULL;
 }

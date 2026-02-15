@@ -18,6 +18,12 @@
 #define PRODUCT      "BEEFPAD"
 #define SERIAL_NUM   "00000000"
 
+// USB mode
+typedef enum {
+  USB_MODE_HID = 0,
+  USB_MODE_XINPUT = 1,
+} USB_MODE;
+
 // oled
 #define I2C_INST    i2c0
 #define I2C_SDA_PIN 0

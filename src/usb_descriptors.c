@@ -1,5 +1,8 @@
 #include "tusb.h"
 #include "config.h"
+#include "xinput.h"
+
+extern USB_MODE usb_mode;
 
 /* ---------------- Device descriptor ---------------- */
 tusb_desc_device_t const desc_device = {
@@ -19,7 +22,27 @@ tusb_desc_device_t const desc_device = {
     .bNumConfigurations = 0x01
 };
 
+tusb_desc_device_t const desc_device_xinput = {
+    .bLength = sizeof(tusb_desc_device_t),
+    .bDescriptorType = TUSB_DESC_DEVICE,
+    .bcdUSB = 0x0200,
+    .bDeviceClass = 0xFF,
+    .bDeviceSubClass = 0xFF,
+    .bDeviceProtocol = 0xFF,
+    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor  = 0x045E,
+    .idProduct = 0x028E,
+    .bcdDevice = 0x0572,
+    .iManufacturer = 0x01,
+    .iProduct      = 0x02,
+    .iSerialNumber = 0x03,
+    .bNumConfigurations = 0x01
+};
+
 uint8_t const * tud_descriptor_device_cb(void) {
+  if (usb_mode == USB_MODE_XINPUT) {
+    return (uint8_t const *) &desc_device_xinput;
+  }
   return (uint8_t const *) &desc_device;
 }
 
@@ -59,6 +82,9 @@ uint8_t const desc_hid_report[] = {
 
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
   (void) itf;
+  if (usb_mode == USB_MODE_XINPUT) {
+    return NULL;
+  }
   return desc_hid_report;
 }
 
@@ -76,8 +102,55 @@ uint8_t const desc_configuration[] = {
   TUD_HID_DESCRIPTOR(0, 0, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report), EPNUM_HID, 8, 1),
 };
 
+// XInput configuration descriptor
+const uint8_t desc_configuration_xinput[] = {
+  // Configuration Descriptor
+  0x09, // bLength
+  0x02, // bDescriptorType
+  0x30, 0x00, // wTotalLength (48 bytes)
+  0x01, // bNumInterfaces
+  0x01, // bConfigurationValue
+  0x00, // iConfiguration
+  0x80, // bmAttributes (Bus-powered)
+  0xFA, // bMaxPower (500 mA)
+
+  // Interface Descriptor
+  0x09, // bLength
+  0x04, // bDescriptorType
+  0x00, // bInterfaceNumber
+  0x00, // bAlternateSetting
+  0x02, // bNumEndPoints
+  0xFF, // bInterfaceClass (Vendor specific)
+  0x5D, // bInterfaceSubClass
+  0x01, // bInterfaceProtocol
+  0x00, // iInterface
+
+  // Unknown Descriptor (XInput specific)
+  0x10, 0x21, 0x10, 0x01, 0x01, 0x24, 0x81, 0x14,
+  0x03, 0x00, 0x03, 0x13, 0x02, 0x00, 0x03, 0x00,
+
+  // Endpoint Descriptor (IN)
+  0x07, // bLength
+  0x05, // bDescriptorType
+  0x81, // bEndpointAddress (IN endpoint 1)
+  0x03, // bmAttributes (Interrupt)
+  0x20, 0x00, // wMaxPacketSize (32 bytes)
+  0x04, // bInterval (4 frames)
+
+  // Endpoint Descriptor (OUT)
+  0x07, // bLength
+  0x05, // bDescriptorType
+  0x02, // bEndpointAddress (OUT endpoint 2)
+  0x03, // bmAttributes (Interrupt)
+  0x20, 0x00, // wMaxPacketSize (32 bytes)
+  0x08, // bInterval (8 frames)
+};
+
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
   (void) index;
+  if (usb_mode == USB_MODE_XINPUT) {
+    return desc_configuration_xinput;
+  }
   return desc_configuration;
 }
 
@@ -87,6 +160,13 @@ static char const* string_desc[] = {
   MANUFACTURER,
   PRODUCT,
   SERIAL_NUM,
+};
+
+static char const* string_desc_xinput[] = {
+  (const char[]) { 0x09, 0x04 }, // 0: LangID = English (0x0409)
+  "GENERIC",
+  "XINPUT CONTROLLER",
+  "1.0",
 };
 
 static uint16_t _desc_str[32];
@@ -101,7 +181,12 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     return _desc_str;
   }
 
-  const char* str = (index < sizeof(string_desc)/sizeof(string_desc[0])) ? string_desc[index] : NULL;
+  char const** string_table = (usb_mode == USB_MODE_XINPUT) ? string_desc_xinput : string_desc;
+  size_t table_size = (usb_mode == USB_MODE_XINPUT) ?
+                      (sizeof(string_desc_xinput)/sizeof(string_desc_xinput[0])) :
+                      (sizeof(string_desc)/sizeof(string_desc[0]));
+
+  const char* str = (index < table_size) ? string_table[index] : NULL;
   if (!str) return NULL;
 
   chr_count = (uint8_t)strlen(str);

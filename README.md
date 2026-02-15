@@ -9,7 +9,7 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 |:---------------------|:-----:|:--------------------------------------------|
 | HID Gamepad          | ✅    | Tested on Linux and Windows (DirectInput).  |
 | HID Keyboard         | ❌    |                                             |
-| XInput               | ❌    |                                             |
+| XInput               | ✅    |                                             |
 | 1000Hz Polling       | ✅    |                                             |
 | Button Remap         | ✅    |                                             |
 | Button Debounce      | ✅    | Leading-edge, configurable per-button.      |
@@ -27,7 +27,7 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 | Platfrom Support     | State | Notes                                       |
 |:---------------------|:-----:|:--------------------------------------------|
 | Linux                | ✅    |                                             |
-| Windows              | ⚠️    | DirectInput only.                           |
+| Windows              | ✅    | DirectInput and XInput supported.           |
 | MacOS                | ⚠️    | Untested, likely works.                     |
 | MiSTer FPGA          | ✅    |                                             |
 | Nintendo Switch      | ❌    |                                             |
@@ -38,3 +38,16 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 | PS3                  | ❌    |                                             |
 | PS4                  | ❌    |                                             |
 | PS5                  | ❌    |                                             |
+
+### Button Combos
+
+| Combo             | Action                                      |
+|:------------------|:--------------------------------------------|
+| `TURBO + B13`     | Toggle LEDs on/off (hold 1s)                |
+| `TURBO + B14`     | Toggle OLED on/off (hold 1s)                |
+| `TURBO + B15`     | Toggle USB mode (HID/XInput, hold 1s)       |
+| `TURBO + B16`     | Save settings to flash (hold 1s)            |
+| `TURBO`           | Enter turbo config mode (hold 1s)           |
+| `B8 + B9`         | Enter bootloader (instant)                  |
+
+**Note:** USB mode changes take effect on next boot.
