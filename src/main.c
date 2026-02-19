@@ -81,6 +81,15 @@ CTRL_STATE CSTATE = PLAY;
 
 
 typedef enum {
+  OLED_MODE_TEXT,
+  OLED_MODE_IMG,
+  OLED_MODE_ANIM,
+  OLED_MODE_OFF,
+} OLED_MODE;
+OLED_MODE oled_mode = OLED_MODE_TEXT;
+
+
+typedef enum {
   TURBO_0HZ,
   TURBO_15HZ,
   TURBO_30HZ,
@@ -134,7 +143,7 @@ typedef struct __attribute__((packed)) { // force 1B alignment of members
   uint32_t magic;
   uint16_t version;
   uint8_t  enable_leds;
-  uint8_t  enable_oled;
+  uint8_t  oled_mode;
   uint8_t  usb_mode;
   // padding accounting for each of the above members
   uint8_t  _pad[FLASH_PAGE_SIZE - 4 - 2 - 1 - 1 - 1];
@@ -143,7 +152,6 @@ typedef struct __attribute__((packed)) { // force 1B alignment of members
 
 pad_cfg cfg;
 bool leds_on = true;
-bool oled_on = true;
 USB_MODE usb_mode = USB_MODE_HID;
 // When remapping buttons, the pin ordering of elements must remain
 // unchanged since it corresponds to the order in which the LEDs are
@@ -323,7 +331,7 @@ static void cfg_init() {
   cfg.magic = MAGIC;
   cfg.version = VERSION;
   cfg.enable_leds = 1;
-  cfg.enable_oled = 1;
+  cfg.oled_mode = OLED_MODE_TEXT;
   cfg.usb_mode = USB_MODE_HID;
 }
 
@@ -345,7 +353,7 @@ bool cfg_load() {
 // apply the settings from cfg
 void cfg_apply() {
   leds_on = cfg.enable_leds;
-  oled_on = cfg.enable_oled;
+  oled_mode = cfg.oled_mode;
   usb_mode = cfg.usb_mode;
 }
 
@@ -650,7 +658,6 @@ static void act_led_toggle() {
 
 static void act_oled_toggle() {
   core1_cmd_mask |= CORE1_CMD_TOGGLE_OLED;
-  cfg.enable_oled ^= 1;
 }
 
 
@@ -848,11 +855,10 @@ static void core1_main() {
 
   // init OLED
   oled_init();
-  if (!oled_on) {
+  if (oled_mode == OLED_MODE_OFF) {
     oled_sleep(true);
   } else {
     oled_clear();
-    oled_blit_img(IMG128x64);
   }
 
   static oled_anim anim;
@@ -865,12 +871,17 @@ static void core1_main() {
   ws2812_program_init(pio, sm, offset, LED_PIN, 800000, false);
 
   led_frame f;
+  static OLED_MODE prev_oled_mode = OLED_MODE_TEXT;
   while (true) {
     if (CSTATE == PLAY) {
       // restore LED/OLED on CSTATE change
       if (prev_cstate != PLAY) {
         oled_clear();
-        oled_sleep(!oled_on);
+        if (oled_mode == OLED_MODE_OFF) {
+          oled_sleep(true);
+        } else {
+          oled_sleep(false);
+        }
 
         if (leds_on) {
           set_leds(pio, sm, &fcache);
@@ -880,15 +891,26 @@ static void core1_main() {
         prev_cstate = PLAY;
       }
 
-      // update oled
-      oled_anim_tick(&anim);
+      // clear oled on mode changes
+      if (oled_mode != prev_oled_mode) {
+        oled_clear();
+        prev_oled_mode = oled_mode;
+      }
+
+      // update oled based on mode
+      if (oled_mode == OLED_MODE_TEXT) {
+        oled_print(0, 0, "OLED TEXT MODE");
+      } else if (oled_mode == OLED_MODE_IMG) {
+        oled_blit_img(IMG128x64);
+      } else if (oled_mode == OLED_MODE_ANIM) {
+        oled_anim_tick(&anim);
+      }
 
       // process commands from core0
       uint32_t cmd = core1_cmd_mask;
       if (cmd & CORE1_CMD_TOGGLE_OLED) {
         core1_cmd_mask &= ~CORE1_CMD_TOGGLE_OLED;
-        oled_sleep(oled_on);
-        oled_on = !oled_on;
+        oled_mode = (oled_mode + 1) % 4;
       }
       if (cmd & CORE1_CMD_TOGGLE_LEDS) {
         core1_cmd_mask &= ~CORE1_CMD_TOGGLE_LEDS;
