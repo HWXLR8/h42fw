@@ -2,6 +2,7 @@
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
 #include "pico/bootrom.h"
+#include "pico/unique_id.h"
 #include "hardware/flash.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
@@ -11,6 +12,7 @@
 #include "bsp/board.h"
 #include "tusb.h"
 #include "device/usbd_pvt.h"
+#include "xsm3/xsm3.h"
 
 #include "font/font5x7.h"
 
@@ -71,6 +73,36 @@ typedef enum {
   USB_MODE_HID = 0,
   USB_MODE_XINPUT = 1,
 } USB_MODE;
+
+
+// Xbox 360 Authentication Request Types
+typedef enum {
+    XSM360_GET_SERIAL         = 0x81,
+    XSM360_INIT_AUTH          = 0x82,
+    XSM360_RESPOND_CHALLENGE  = 0x83,
+    XSM360_AUTH_KEEPALIVE     = 0x84,
+    XSM360_REQUEST_STATE      = 0x86,
+    XSM360_VERIFY_AUTH        = 0x87,
+} XSM360AuthRequest;
+
+#define X360_AUTHLEN_CONSOLE_INIT  34
+#define X360_AUTHLEN_DONGLE_SERIAL 29
+#define X360_AUTHLEN_DONGLE_INIT   46
+#define X360_AUTHLEN_CHALLENGE     22
+
+typedef enum {
+    AUTH_IDLE_STATE = 0,
+    AUTH_PROCESSING = 1,
+    AUTH_READY = 2,
+} AUTH_STATE;
+
+typedef struct {
+    AUTH_STATE state;
+    uint8_t init_buffer[X360_AUTHLEN_DONGLE_INIT];
+    uint8_t challenge_buffer[X360_AUTHLEN_CHALLENGE];
+    uint8_t serial_buffer[X360_AUTHLEN_DONGLE_SERIAL];
+    bool initialized;
+} xinput_auth;
 
 
 typedef enum {
@@ -245,6 +277,8 @@ typedef struct __attribute__((packed, aligned(1))){
 xinput_report xinput_data;
 static uint8_t xinput_endpoint_in = 0;
 static uint8_t xinput_endpoint_out = 0;
+static xinput_auth xauth = {0};
+static uint8_t vendor_buffer[64] = {0};
 
 
 static void send_xinput_report(uint32_t bits) {
@@ -852,6 +886,17 @@ static void oled_draw_hud() {
     oled_print(0, 0, "HID");
   } else if (usb_mode == USB_MODE_XINPUT) {
     oled_print(0, 0, "XINPUT");
+    if (xauth.initialized) {
+      if (xauth.state == AUTH_IDLE_STATE) {
+        oled_print(1, 0, "AUTH: IDLE");
+      } else if (xauth.state == AUTH_PROCESSING) {
+        oled_print(2, 0, "AUTH: PROC");
+      } else if (xauth.state == AUTH_READY) {
+        oled_print(3, 0, "AUTH: OK");
+      }
+    } else {
+      oled_print(4, 0, "AUTH: N/A");
+    }
   }
 }
 
@@ -1061,11 +1106,123 @@ void tud_hid_report_complete_cb(uint8_t itf, uint8_t const* report, uint16_t len
 
 
 /* ---- XInput Driver Implementation ---- */
+static bool xinput_driver_control_xfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
+  uint16_t len = 0;
+
+  // Handle IN requests (device to host)
+  if (request->bmRequestType_bit.direction == TUSB_DIR_IN) {
+    if (stage == CONTROL_STAGE_SETUP) {
+      switch (request->bRequest) {
+        case XSM360_GET_SERIAL:
+          if (!xauth.initialized) return false;
+          memcpy(vendor_buffer, xauth.serial_buffer, X360_AUTHLEN_DONGLE_SERIAL);
+          len = X360_AUTHLEN_DONGLE_SERIAL;
+          break;
+
+        case XSM360_REQUEST_STATE:
+          {
+            uint16_t state = (xauth.state == AUTH_READY) ? 2 : 1;
+            memcpy(vendor_buffer, &state, sizeof(state));
+            len = sizeof(state);
+          }
+          break;
+
+        case XSM360_RESPOND_CHALLENGE:
+          if (xauth.state != AUTH_READY) return false;
+
+          if (request->wValue == 0x5C) {
+            // check length to determine which response to send
+            if (request->wLength == X360_AUTHLEN_DONGLE_INIT) {
+              // init response (46 bytes)
+              memcpy(vendor_buffer, xauth.init_buffer, X360_AUTHLEN_DONGLE_INIT);
+              len = X360_AUTHLEN_DONGLE_INIT;
+            } else if (request->wLength == X360_AUTHLEN_CHALLENGE) {
+              // verify response (22 bytes)
+              memcpy(vendor_buffer, xauth.challenge_buffer, X360_AUTHLEN_CHALLENGE);
+              len = X360_AUTHLEN_CHALLENGE;
+            } else {
+              return false;
+            }
+          } else {
+            return false;
+          }
+          break;
+
+        case XSM360_AUTH_KEEPALIVE:
+          len = 0;
+          break;
+
+        default:
+          break;
+      }
+      tud_control_xfer(rhport, request, vendor_buffer, len);
+    }
+  }
+  // Handle OUT requests (host to device)
+  else if (request->bmRequestType_bit.direction == TUSB_DIR_OUT) {
+    if (stage == CONTROL_STAGE_SETUP) {
+      tud_control_xfer(rhport, request, vendor_buffer, request->wLength);
+    }
+    else if (stage == CONTROL_STAGE_DATA) {
+      switch (request->bRequest) {
+        case XSM360_INIT_AUTH:
+          if (request->wLength == X360_AUTHLEN_CONSOLE_INIT) {
+            xauth.state = AUTH_PROCESSING;
+            xsm3_do_challenge_init(vendor_buffer);
+            memcpy(xauth.init_buffer, xsm3_challenge_response, X360_AUTHLEN_DONGLE_INIT);
+            xauth.state = AUTH_READY;
+          }
+          break;
+
+        case XSM360_VERIFY_AUTH:
+          if (request->wLength == X360_AUTHLEN_CHALLENGE) {
+            xauth.state = AUTH_PROCESSING;
+            xsm3_do_challenge_verify(vendor_buffer);
+            memcpy(xauth.challenge_buffer, xsm3_challenge_response, X360_AUTHLEN_CHALLENGE);
+            xauth.state = AUTH_READY;
+          }
+          break;
+      }
+    }
+  }
+
+  return true;
+}
+
+bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
+  // in XINPUT mode, handle vendor requests for Xbox 360 auth
+  if (usb_mode == USB_MODE_XINPUT) {
+    return xinput_driver_control_xfer(rhport, stage, request);
+  }
+  return false;
+}
+
 
 static void xinput_driver_init(void) {
   memset(&xinput_data, 0, sizeof(xinput_data));
   xinput_data.rid = 0x00;
   xinput_data.rsize = 0x14;
+
+  // Initialize XSM3 authentication
+  if (usb_mode == USB_MODE_XINPUT) {
+    // Generate serial from Pico unique ID
+    uint8_t serial[0x0C];
+    pico_unique_board_id_t board_id;
+    pico_get_unique_board_id(&board_id);
+    for(int i = 0; i < 0x0C; i++) {
+      serial[i] = 'A' + (board_id.id[i] % 25);
+    }
+
+    // Initialize xsm3 with Microsoft controller identity
+    xsm3_set_vid_pid(serial, 0x045E, 0x028E);
+    xsm3_initialise_state();
+    xsm3_set_identification_data(xsm3_id_data_ms_controller);
+
+    // Copy serial to auth structure
+    memcpy(xauth.serial_buffer, xsm3_id_data_ms_controller, X360_AUTHLEN_DONGLE_SERIAL);
+    xauth.state = AUTH_IDLE_STATE;
+    xauth.initialized = true;
+  }
 }
 
 static void xinput_driver_reset(uint8_t rhport) {
@@ -1075,33 +1232,58 @@ static void xinput_driver_reset(uint8_t rhport) {
 }
 
 static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len) {
-  // +16 for the unknown XInput descriptor
-  uint16_t const drv_len = sizeof(tusb_desc_interface_t) + itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t) + 16;
-  TU_VERIFY(max_len >= drv_len, 0);
+  uint16_t driver_length = 0;
 
-  uint8_t const *p_desc = tu_desc_next(itf_desc);
-  uint8_t found_endpoints = 0;
+  // Xbox 360 has 4 interfaces: Control (0x5D/0x01), Audio (0x5D/0x03), Plugin (0x5D/0x02), Security (0xFD/0x13)
+  if (TUSB_CLASS_VENDOR_SPECIFIC == itf_desc->bInterfaceClass) {
+    driver_length = sizeof(tusb_desc_interface_t) + (itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t));
+    TU_VERIFY(max_len >= driver_length, 0);
 
-  while ((found_endpoints < itf_desc->bNumEndpoints) && (drv_len <= max_len)) {
-    tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)p_desc;
-    if (TUSB_DESC_ENDPOINT == tu_desc_type(desc_ep)) {
-      TU_ASSERT(usbd_edpt_open(rhport, desc_ep));
+    uint8_t const *p_desc = (uint8_t const *)itf_desc;
 
-      if (tu_edpt_dir(desc_ep->bEndpointAddress) == TUSB_DIR_IN) {
-        xinput_endpoint_in = desc_ep->bEndpointAddress;
-      } else {
-        xinput_endpoint_out = desc_ep->bEndpointAddress;
+    // Control, Audio, or Plugin Module interfaces (0x5D)
+    if (itf_desc->bInterfaceSubClass == 0x5D &&
+        (itf_desc->bInterfaceProtocol == 0x01 ||  // Control
+         itf_desc->bInterfaceProtocol == 0x02 ||  // Plugin Module
+         itf_desc->bInterfaceProtocol == 0x03)) { // Audio
+
+      // Skip interface descriptor
+      p_desc = tu_desc_next(p_desc);
+
+      // Skip the class-specific descriptor (0x21 - gamepad/audio/plugin descriptor)
+      TU_VERIFY(0x21 == tu_desc_type(p_desc), 0);
+      driver_length += p_desc[0]; // Add class descriptor length
+      p_desc = tu_desc_next(p_desc);
+
+      // Open endpoints for Control interface only (we only use endpoint 0x81 and 0x02)
+      if (itf_desc->bInterfaceProtocol == 0x01) {
+        for (uint8_t i = 0; i < itf_desc->bNumEndpoints; i++) {
+          tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)p_desc;
+          TU_VERIFY(TUSB_DESC_ENDPOINT == tu_desc_type(desc_ep), 0);
+          TU_ASSERT(usbd_edpt_open(rhport, desc_ep), 0);
+
+          if (tu_edpt_dir(desc_ep->bEndpointAddress) == TUSB_DIR_IN) {
+            xinput_endpoint_in = desc_ep->bEndpointAddress;
+          } else {
+            xinput_endpoint_out = desc_ep->bEndpointAddress;
+          }
+          p_desc = tu_desc_next(p_desc);
+        }
       }
-      found_endpoints++;
     }
-    p_desc = tu_desc_next(p_desc);
-  }
-  return drv_len;
-}
+    // Security interface (0xFD/0x13) - for authentication
+    else if (itf_desc->bInterfaceSubClass == 0xFD &&
+             itf_desc->bInterfaceProtocol == 0x13) {
+      // Skip interface descriptor
+      p_desc = tu_desc_next(p_desc);
 
-static bool xinput_driver_control_xfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
-  (void)rhport; (void)stage; (void)request;
-  return true;
+      // Skip the security descriptor (0x41)
+      TU_VERIFY(0x41 == tu_desc_type(p_desc), 0);
+      driver_length += p_desc[0]; // Add security descriptor length
+    }
+  }
+
+  return driver_length;
 }
 
 static bool xinput_driver_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
@@ -1157,10 +1339,10 @@ tusb_desc_device_t const desc_device_xinput = {
     .bDeviceClass = 0xFF,
     .bDeviceSubClass = 0xFF,
     .bDeviceProtocol = 0xFF,
-    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .bMaxPacketSize0 = 0x40,
     .idVendor  = 0x045E,
     .idProduct = 0x028E,
-    .bcdDevice = 0x0572,
+    .bcdDevice = 0x0114,
     .iManufacturer = 0x01,
     .iProduct      = 0x02,
     .iSerialNumber = 0x03,
@@ -1232,48 +1414,156 @@ uint8_t const desc_configuration[] = {
 };
 
 
-// XInput configuration descriptor
+// XInput configuration descriptor - MUST match GP2040-CE exactly for compatibility
 const uint8_t desc_configuration_xinput[] = {
   // Configuration Descriptor
-  0x09, // bLength
-  0x02, // bDescriptorType
-  0x30, 0x00, // wTotalLength (48 bytes)
-  0x01, // bNumInterfaces
-  0x01, // bConfigurationValue
-  0x00, // iConfiguration
-  0x80, // bmAttributes (Bus-powered)
-  0xFA, // bMaxPower (500 mA)
+  0x09,        // bLength
+  0x02,        // bDescriptorType (Configuration)
+  0x99, 0x00,  // wTotalLength 153 bytes (0x99)
+  0x04,        // bNumInterfaces 4 (Control, Audio, Plugin Module, Security)
+  0x01,        // bConfigurationValue
+  0x00,        // iConfiguration (String Index)
+  0xA0,        // bmAttributes (remote wakeup)
+  0xFA,        // bMaxPower 500mA
 
-  // Interface Descriptor
-  0x09, // bLength
-  0x04, // bDescriptorType
-  0x00, // bInterfaceNumber
-  0x00, // bAlternateSetting
-  0x02, // bNumEndPoints
-  0xFF, // bInterfaceClass (Vendor specific)
-  0x5D, // bInterfaceSubClass
-  0x01, // bInterfaceProtocol
-  0x00, // iInterface
+  // Interface 0: Control Interface (0xFF 0x5D 0x01)
+  0x09,        // bLength
+  0x04,        // bDescriptorType (Interface)
+  0x00,        // bInterfaceNumber 0
+  0x00,        // bAlternateSetting
+  0x02,        // bNumEndpoints 2
+  0xFF,        // bInterfaceClass
+  0x5D,        // bInterfaceSubClass
+  0x01,        // bInterfaceProtocol
+  0x00,        // iInterface (String Index)
 
-  // Unknown Descriptor (XInput specific)
-  0x10, 0x21, 0x10, 0x01, 0x01, 0x24, 0x81, 0x14,
-  0x03, 0x00, 0x03, 0x13, 0x02, 0x00, 0x03, 0x00,
+  // Gamepad Descriptor
+  0x11,        // bLength
+  0x21,        // bDescriptorType (HID)
+  0x00, 0x01,  // bcdHID 1.10
+  0x01,        // SUB_TYPE
+  0x25,        // reserved2
+  0x81,        // DEVICE_EPADDR_IN
+  0x14,        // bMaxDataSizeIn
+  0x00, 0x00, 0x00, 0x00, 0x13, // reserved3
+  0x02,        // DEVICE_EPADDR_OUT
+  0x08,        // bMaxDataSizeOut
+  0x00, 0x00,  // reserved4
 
-  // Endpoint Descriptor (IN)
-  0x07, // bLength
-  0x05, // bDescriptorType
-  0x81, // bEndpointAddress (IN endpoint 1)
-  0x03, // bmAttributes (Interrupt)
-  0x20, 0x00, // wMaxPacketSize (32 bytes)
-  0x04, // bInterval (4 frames)
+  // Report IN Endpoint 1.1
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x81,        // bEndpointAddress (IN/D2H)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x01,        // bInterval 1
 
-  // Endpoint Descriptor (OUT)
-  0x07, // bLength
-  0x05, // bDescriptorType
-  0x02, // bEndpointAddress (OUT endpoint 2)
-  0x03, // bmAttributes (Interrupt)
-  0x20, 0x00, // wMaxPacketSize (32 bytes)
-  0x08, // bInterval (8 frames)
+  // Report OUT Endpoint 1.2
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x02,        // bEndpointAddress (OUT/H2D)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x08,        // bInterval 8
+
+  // Interface 1: Audio (0xFF 0x5D 0x03)
+  0x09,        // bLength
+  0x04,        // bDescriptorType (Interface)
+  0x01,        // bInterfaceNumber 1
+  0x00,        // bAlternateSetting
+  0x04,        // bNumEndpoints 4
+  0xFF,        // bInterfaceClass
+  0x5D,        // bInterfaceSubClass
+  0x03,        // bInterfaceProtocol
+  0x00,        // iInterface (String Index)
+
+  // Audio Descriptor
+  0x1B,        // bLength
+  0x21,
+  0x00, 0x01, 0x01, 0x01,
+  0x83,        // XINPUT_MIC_IN
+  0x40, 0x01,
+  0x04,        // XINPUT_AUDIO_OUT
+  0x20, 0x16,
+  0x85,        // XINPUT_UNK_IN
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16,
+  0x06,        // XINPUT_UNK_OUT
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+  // Report IN Endpoint 2.1
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x83,        // bEndpointAddress (XINPUT_MIC_IN)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x02,        // bInterval 2
+
+  // Report OUT Endpoint 2.2
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x04,        // bEndpointAddress (XINPUT_AUDIO_OUT)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x04,        // bInterval 4
+
+  // Report IN Endpoint 2.3
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x85,        // bEndpointAddress (XINPUT_UNK_IN)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x40,        // bInterval 64
+
+  // Report OUT Endpoint 2.4
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x06,        // bEndpointAddress (XINPUT_UNK_OUT)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x10,        // bInterval 16
+
+  // Interface 2: Plugin Module (0xFF 0x5D 0x02)
+  0x09,        // bLength
+  0x04,        // bDescriptorType (Interface)
+  0x02,        // bInterfaceNumber 2
+  0x00,        // bAlternateSetting
+  0x01,        // bNumEndpoints 1
+  0xFF,        // bInterfaceClass
+  0x5D,        // bInterfaceSubClass
+  0x02,        // bInterfaceProtocol
+  0x00,        // iInterface (String Index)
+
+  // PluginModuleDescriptor
+  0x09,        // bLength
+  0x21,        // bDescriptorType
+  0x00, 0x01,  // version 1.00
+  0x01, 0x22,
+  0x86,        // XINPUT_PLUGIN_MODULE_IN
+  0x03, 0x00,
+
+  // Report IN Endpoint 3.1
+  0x07,        // bLength
+  0x05,        // bDescriptorType (Endpoint)
+  0x86,        // bEndpointAddress (XINPUT_PLUGIN_MODULE_IN)
+  0x03,        // bmAttributes (Interrupt)
+  0x20, 0x00,  // wMaxPacketSize 32
+  0x10,        // bInterval 16
+
+  // Interface 3: Security (0xFF 0xFD 0x13) ← AUTHENTICATION INTERFACE
+  0x09,        // bLength
+  0x04,        // bDescriptorType (Interface)
+  0x03,        // bInterfaceNumber 3
+  0x00,        // bAlternateSetting
+  0x00,        // bNumEndpoints 0
+  0xFF,        // bInterfaceClass
+  0xFD,        // bInterfaceSubClass (SECURITY!)
+  0x13,        // bInterfaceProtocol
+  0x04,        // iInterface (String Index)
+
+  // SecurityDescriptor (XSM3)
+  0x06,        // bLength
+  0x41,        // bDescriptorType (Xbox 360)
+  0x00, 0x01, 0x01, 0x03
 };
 
 
@@ -1297,13 +1587,14 @@ static char const* string_desc[] = {
 
 static char const* string_desc_xinput[] = {
   (const char[]) { 0x09, 0x04 }, // 0: LangID = English (0x0409)
-  MANUFACTURER,
-  PRODUCT,
+  "\xA9Microsoft Corporation",
+  "Controller",
   SERIAL_NUM,
+  "Xbox Security Method 3, Version 1.00, \xA9 2005 Microsoft Corporation. All rights reserved.",
 };
 
 
-static uint16_t _desc_str[32];
+static uint16_t _desc_str[96]; // Increased to hold XSM3 string (89 chars)
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
   (void) langid;
 
@@ -1323,7 +1614,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
   if (!str) return NULL;
 
   chr_count = (uint8_t)strlen(str);
-  if (chr_count > 31) chr_count = 31;
+  if (chr_count > 95) chr_count = 95; // Match buffer size
 
   for (uint8_t i = 0; i < chr_count; i++) _desc_str[1 + i] = str[i];
   _desc_str[0] = (TUSB_DESC_STRING << 8) | (2*chr_count + 2);
