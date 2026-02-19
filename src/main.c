@@ -891,9 +891,14 @@ static void core1_main() {
         prev_cstate = PLAY;
       }
 
-      // clear oled on mode changes
+      // handle oled mode state changes
       if (oled_mode != prev_oled_mode) {
-        oled_clear();
+        if (oled_mode == OLED_MODE_OFF) {
+          oled_sleep(true);
+        } else {
+          oled_sleep(false);
+          oled_clear();
+        }
         prev_oled_mode = oled_mode;
       }
 
