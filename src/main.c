@@ -1216,19 +1216,15 @@ static bool xinput_driver_control_xfer(uint8_t rhport, uint8_t stage, tusb_contr
         case XSM360_RESPOND_CHALLENGE:
           if (xauth.state != AUTH_READY) return false;
 
-          if (request->wValue == 0x5C) {
-            // check length to determine which response to send
-            if (request->wLength == X360_AUTHLEN_DONGLE_INIT) {
-              // init response (46 bytes)
-              memcpy(vendor_buffer, xauth.init_buffer, X360_AUTHLEN_DONGLE_INIT);
-              len = X360_AUTHLEN_DONGLE_INIT;
-            } else if (request->wLength == X360_AUTHLEN_CHALLENGE) {
-              // verify response (22 bytes)
-              memcpy(vendor_buffer, xauth.challenge_buffer, X360_AUTHLEN_CHALLENGE);
-              len = X360_AUTHLEN_CHALLENGE;
-            } else {
-              return false;
-            }
+          // check length to determine which response to send
+          if (request->wLength == X360_AUTHLEN_DONGLE_INIT) {
+            // init response (46 bytes)
+            memcpy(vendor_buffer, xauth.init_buffer, X360_AUTHLEN_DONGLE_INIT);
+            len = X360_AUTHLEN_DONGLE_INIT;
+          } else if (request->wLength == X360_AUTHLEN_CHALLENGE) {
+            // verify response (22 bytes)
+            memcpy(vendor_buffer, xauth.challenge_buffer, X360_AUTHLEN_CHALLENGE);
+            len = X360_AUTHLEN_CHALLENGE;
           } else {
             return false;
           }
