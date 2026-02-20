@@ -291,6 +291,10 @@ static uint8_t block_reason = 0;
 static uint32_t in_xfer_complete = 0;
 static uint32_t out_xfer_complete = 0;
 static xinput_report last_xinput_data = {0};
+static uint8_t last_ep_addr = 0;
+static uint8_t xfer_cb_called = 0;
+static uint8_t xinput_driver_open_called = 0;
+static uint8_t xinput_driver_init_called = 0;
 
 static void send_xinput_report(uint32_t bits) {
   // Set report size
@@ -924,25 +928,36 @@ static void oled_draw_hud() {
     // dbg
     char buf[32];
 
-    extern uint8_t block_reason;
-    snprintf(buf, sizeof(buf), "BLK_REASON: %d", block_reason);
-    oled_print(4, 0, buf);
+    /* extern uint8_t block_reason; */
+    /* snprintf(buf, sizeof(buf), "BLK_REASON: %d", block_reason); */
+    /* oled_print(4, 0, buf); */
 
 
     /* snprintf(buf, sizeof(buf), "EP: %02X/%02X", xinput_endpoint_in, xinput_endpoint_out); */
     /* oled_print(4, 0, buf); */
 
     snprintf(buf, sizeof(buf), "RDY: %d CNT: %lu", tud_ready(), xinput_send_count);
-    oled_print(5, 0, buf);
+    oled_print(4, 0, buf);
 
     /* extern uint32_t debug_bits; */
     /* extern uint32_t debug_raw_bits; */
     /* snprintf(buf, sizeof(buf), "B: %04lX R: %04lX", debug_bits & 0xFFFF, debug_raw_bits & 0xFFFF); */
     /* oled_print(6, 0, buf); */
 
+    extern uint8_t xfer_cb_called;
     extern uint32_t in_xfer_complete;
-    snprintf(buf, sizeof(buf), "IN_CB:%lu OUT:%02X%02X", in_xfer_complete, xinput_out_buffer[0], xinput_out_buffer[1]);
-    oled_print(6, 0, buf);
+    extern uint32_t out_xfer_complete;
+    snprintf(buf, sizeof(buf), "IN_CB:%lu I:%lu O:%lu", xfer_cb_called, in_xfer_complete, out_xfer_complete);
+    oled_print(5, 0, buf);
+
+    // this is returning EP: 00==81?
+    /* extern uint8_t last_ep_addr; */
+    /* snprintf(buf, sizeof(buf), "EP: %02X==%02X?", last_ep_addr, xinput_endpoint_in); */
+    /* oled_print(6, 0, buf); */
+
+    extern uint8_t xinput_driver_init_called;
+    extern uint8_t xinput_driver_open_called;
+    snprintf(buf, sizeof(buf), "INIT: %u OPEN: %u", xinput_driver_init_called, xinput_driver_open_called);    oled_print(6, 0, buf);
 
     extern uint32_t send_attempts;
     extern uint32_t send_blocked;
@@ -1270,6 +1285,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 
 
 static void xinput_driver_init(void) {
+  xinput_driver_init_called++;
   memset(&xinput_data, 0, sizeof(xinput_data));
   xinput_data.rid = 0x00;
   xinput_data.rsize = 0x14;
@@ -1303,6 +1319,7 @@ static void xinput_driver_reset(uint8_t rhport) {
 }
 
 static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len) {
+  xinput_driver_open_called++;
   uint16_t driver_length = 0;
 
   // Xbox 360 has 4 interfaces: Control (0x5D/0x01), Audio (0x5D/0x03), Plugin (0x5D/0x02), Security (0xFD/0x13)
@@ -1310,23 +1327,19 @@ static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *
     driver_length = sizeof(tusb_desc_interface_t) + (itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t));
     TU_VERIFY(max_len >= driver_length, 0);
 
-    uint8_t const *p_desc = (uint8_t const *)itf_desc;
+    tusb_desc_interface_t* p_desc = (tusb_desc_interface_t*)itf_desc;
 
     // Control, Audio, or Plugin Module interfaces (0x5D)
     if (itf_desc->bInterfaceSubClass == 0x5D &&
-        (itf_desc->bInterfaceProtocol == 0x01 ||  // Control
-         itf_desc->bInterfaceProtocol == 0x02 ||  // Plugin Module
-         itf_desc->bInterfaceProtocol == 0x03)) { // Audio
-
-      // Skip interface descriptor
-      p_desc = tu_desc_next(p_desc);
-
-      // Skip the class-specific descriptor (0x21 - gamepad/audio/plugin descriptor)
-      TU_VERIFY(0x21 == tu_desc_type(p_desc), 0);
-      driver_length += p_desc[0]; // Add class descriptor length
-      p_desc = tu_desc_next(p_desc);
-
-      // Open endpoints for Control interface only (we only use endpoint 0x81 and 0x02)
+        ((itf_desc->bInterfaceProtocol == 0x01) ||  // Control
+         (itf_desc->bInterfaceProtocol == 0x02) ||  // Plugin Module
+         (itf_desc->bInterfaceProtocol == 0x03))) { // Audio
+      // get xbox 360 definition
+      p_desc = (tusb_desc_interface_t*)tu_desc_next(p_desc);
+      TU_VERIFY(0x21 == p_desc->bDescriptorType, 0);
+      driver_length += p_desc->bLength;
+      p_desc = (tusb_desc_interface_t*)tu_desc_next(p_desc);
+      // control endpoints used for gamepad i/o
       if (itf_desc->bInterfaceProtocol == 0x01) {
         TU_ASSERT(usbd_open_edpt_pair(rhport,
                                       (const uint8_t*)p_desc,
@@ -1334,24 +1347,12 @@ static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *
                                       TUSB_XFER_INTERRUPT,
                                       &xinput_endpoint_out,
                                       &xinput_endpoint_in), 0);
-      } else {
-        // for audio and plugin interfaces, skip endpoint descriptors
-        // without opening them
-        for (uint8_t i = 0; i < itf_desc->bNumEndpoints; i++) {
-          TU_VERIFY(TUSB_DESC_ENDPOINT == tu_desc_type(p_desc), 0);
-          p_desc = tu_desc_next(p_desc);
-        }
       }
-    }
-    // Security interface (0xFD/0x13) - for authentication
-    else if (itf_desc->bInterfaceSubClass == 0xFD &&
-             itf_desc->bInterfaceProtocol == 0x13) {
-      // Skip interface descriptor
-      p_desc = tu_desc_next(p_desc);
-
-      // Skip the security descriptor (0x41)
-      TU_VERIFY(0x41 == tu_desc_type(p_desc), 0);
-      driver_length += p_desc[0]; // Add security descriptor length
+    } else if (itf_desc->bInterfaceSubClass == 0xFD &&
+               itf_desc->bInterfaceProtocol == 0x13) {
+      p_desc = (tusb_desc_interface_t*)tu_desc_next(p_desc);
+      TU_VERIFY(0x41 == p_desc->bDescriptorType, 0);
+      driver_length += p_desc->bLength;
     }
   }
 
@@ -1363,10 +1364,14 @@ static bool xinput_driver_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t
   (void)result;
   (void)xferred_bytes;
 
+  xfer_cb_called++;
+  last_ep_addr = ep_addr;
+
   // queue another transfer on OUT endpoint when data is received
   if (ep_addr == xinput_endpoint_in) {
     in_xfer_complete++;
   } else if (ep_addr == xinput_endpoint_out) {
+    out_xfer_complete++;
     usbd_edpt_xfer(0, xinput_endpoint_out,
                    xinput_out_buffer,
                    sizeof(xinput_out_buffer));
