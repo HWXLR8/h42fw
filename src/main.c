@@ -343,7 +343,7 @@ static void send_xinput_report(uint32_t bits) {
     send_attempts++;
     block_reason = 0;
 
-    if (tud_ready() && xinput_endpoint_in != 0 & !usbd_edpt_busy(0, xinput_endpoint_in)) {
+    if (tud_ready() && xinput_endpoint_in != 0 && !usbd_edpt_busy(0, xinput_endpoint_in)) {
       usbd_edpt_claim(0, xinput_endpoint_in);
       usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
       usbd_edpt_release(0, xinput_endpoint_in);
@@ -1081,6 +1081,7 @@ int main() {
   led_frame last_sent = {0};
 
   bool was_pressed[BTN_COUNT] = {0};
+  bool xinput_out_queued = false;
 
   while (true) {
     tud_task();
@@ -1089,10 +1090,12 @@ int main() {
     if (usb_mode == USB_MODE_XINPUT &&
         tud_ready() &&
         xinput_endpoint_out != 0 &&
-        !usbd_edpt_busy(0, xinput_endpoint_out)) {
+        !usbd_edpt_busy(0, xinput_endpoint_out) &&
+        !xinput_out_queued) {
       usbd_edpt_claim(0, xinput_endpoint_out);
       usbd_edpt_xfer(0, xinput_endpoint_out, xinput_out_buffer, sizeof(xinput_out_buffer));
       usbd_edpt_release(0, xinput_endpoint_out);
+      xinput_out_queued = true;
     }
 
     memset(pressed_led, 0, sizeof(pressed_led));
