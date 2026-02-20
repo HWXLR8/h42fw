@@ -290,18 +290,9 @@ static uint32_t send_blocked = 0;
 static uint8_t block_reason = 0;
 static uint32_t in_xfer_complete = 0;
 static uint32_t out_xfer_complete = 0;
+static xinput_report last_xinput_data = {0};
 
 static void send_xinput_report(uint32_t bits) {
-  send_attempts++;
-  block_reason = 0;
-  if (!tud_ready() || xinput_endpoint_in == 0 || usbd_edpt_busy(0, xinput_endpoint_in)) {
-    if (!tud_ready()) block_reason = 1;
-    else if (xinput_endpoint_in == 0) block_reason = 2;
-    else if (usbd_edpt_busy(0, xinput_endpoint_in)) block_reason = 3;
-    send_blocked++;
-    return;
-  }
-
   // Set report size
   xinput_data.rsize = 20;
 
@@ -347,10 +338,25 @@ static void send_xinput_report(uint32_t bits) {
   xinput_data.r_x = 0;
   xinput_data.r_y = 0;
 
-  usbd_edpt_claim(0, xinput_endpoint_in);
-  usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
-  usbd_edpt_release(0, xinput_endpoint_in);
-  xinput_send_count++;
+  if (memcmp(&last_xinput_data, &xinput_data, sizeof(xinput_report)) != 0) {
+    send_attempts++;
+    block_reason = 0;
+    if (!tud_ready() || xinput_endpoint_in == 0 || usbd_edpt_busy(0, xinput_endpoint_in)) {
+      if (!tud_ready()) block_reason = 1;
+      else if (xinput_endpoint_in == 0) block_reason = 2;
+      else if (usbd_edpt_busy(0, xinput_endpoint_in)) block_reason = 3;
+      send_blocked++;
+      return;
+    }
+
+    usbd_edpt_claim(0, xinput_endpoint_in);
+    usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
+    usbd_edpt_release(0, xinput_endpoint_in);
+
+    // save the report we just sent
+    memcpy(&last_xinput_data, &xinput_data, sizeof(xinput_report));
+    xinput_send_count++;
+  }
 }
 
 
