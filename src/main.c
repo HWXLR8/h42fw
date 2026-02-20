@@ -1210,7 +1210,7 @@ static void xinput_driver_init(void) {
     pico_unique_board_id_t board_id;
     pico_get_unique_board_id(&board_id);
     for(int i = 0; i < 0x0C; i++) {
-      serial[i] = 'A' + (board_id.id[i] % 25);
+      serial[i] = 'A' + (board_id.id[i % PICO_UNIQUE_BOARD_ID_SIZE_BYTES] % 25);
     }
 
     // Initialize xsm3 with Microsoft controller identity
@@ -1267,6 +1267,13 @@ static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *
           } else {
             xinput_endpoint_out = desc_ep->bEndpointAddress;
           }
+          p_desc = tu_desc_next(p_desc);
+        }
+      } else {
+        // for audio and plugin interfaces, skip endpoint descriptors
+        // without opening them
+        for (uint8_t i = 0; i < itf_desc->bNumEndpoints; i++) {
+          TU_VERIFY(TUSB_DESC_ENDPOINT == tu_desc_type(p_desc), 0);
           p_desc = tu_desc_next(p_desc);
         }
       }
