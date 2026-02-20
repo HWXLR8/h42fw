@@ -1054,7 +1054,6 @@ int main() {
   led_frame last_sent = {0};
 
   bool was_pressed[BTN_COUNT] = {0};
-  bool xinput_out_queued = false;
 
   while (true) {
     tud_task();
@@ -1063,12 +1062,10 @@ int main() {
     if (usb_mode == USB_MODE_XINPUT &&
         tud_ready() &&
         xinput_endpoint_out != 0 &&
-        !xinput_out_queued &&
         !usbd_edpt_busy(0, xinput_endpoint_out)) {
       usbd_edpt_claim(0, xinput_endpoint_out);
       usbd_edpt_xfer(0, xinput_endpoint_out, xinput_out_buffer, sizeof(xinput_out_buffer));
       usbd_edpt_release(0, xinput_endpoint_out);
-      xinput_out_queued = true;
     }
 
     memset(pressed_led, 0, sizeof(pressed_led));
@@ -1083,17 +1080,17 @@ int main() {
       process_turbo(&bits);
 
       // send report based on USB mode
-      if (bits != prev_bits || raw_bits != prev_bits) {
-        if (usb_mode == USB_MODE_XINPUT) {
-          send_xinput_report(raw_bits);
-        } else {
+      if (usb_mode == USB_MODE_XINPUT) {
+        send_xinput_report(raw_bits);
+      } else {
+        if (bits != prev_bits || raw_bits != prev_bits) {
           if (tud_hid_ready()) {
             gamepad_report rpt = {.buttons = bits};
             tud_hid_report(0, &rpt, sizeof(rpt));
           }
         }
-        prev_bits = bits;
       }
+      prev_bits = bits;
 
       // enqueue LED frame only if LEDs changed
       led_frame f;
