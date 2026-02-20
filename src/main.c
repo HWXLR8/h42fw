@@ -338,24 +338,25 @@ static void send_xinput_report(uint32_t bits) {
   xinput_data.r_x = 0;
   xinput_data.r_y = 0;
 
+  // only send if report changed
   if (memcmp(&last_xinput_data, &xinput_data, sizeof(xinput_report)) != 0) {
     send_attempts++;
     block_reason = 0;
-    if (!tud_ready() || xinput_endpoint_in == 0 || usbd_edpt_busy(0, xinput_endpoint_in)) {
+
+    if (tud_ready() && xinput_endpoint_in != 0 & !usbd_edpt_busy(0, xinput_endpoint_in)) {
+      usbd_edpt_claim(0, xinput_endpoint_in);
+      usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
+      usbd_edpt_release(0, xinput_endpoint_in);
+
+      // save the report we just sent
+      memcpy(&last_xinput_data, &xinput_data, sizeof(xinput_report));
+      xinput_send_count++;
+    } else {
       if (!tud_ready()) block_reason = 1;
       else if (xinput_endpoint_in == 0) block_reason = 2;
       else if (usbd_edpt_busy(0, xinput_endpoint_in)) block_reason = 3;
       send_blocked++;
-      return;
     }
-
-    usbd_edpt_claim(0, xinput_endpoint_in);
-    usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
-    usbd_edpt_release(0, xinput_endpoint_in);
-
-    // save the report we just sent
-    memcpy(&last_xinput_data, &xinput_data, sizeof(xinput_report));
-    xinput_send_count++;
   }
 }
 
@@ -922,18 +923,21 @@ static void oled_draw_hud() {
     }
     // dbg
     char buf[32];
-    snprintf(buf, sizeof(buf), "EP: %02X/%02X", xinput_endpoint_in, xinput_endpoint_out);
+
+    extern uint8_t block_reason;
+    snprintf(buf, sizeof(buf), "BLK_REASON: %d", block_reason);
     oled_print(4, 0, buf);
+
+
+    /* snprintf(buf, sizeof(buf), "EP: %02X/%02X", xinput_endpoint_in, xinput_endpoint_out); */
+    /* oled_print(4, 0, buf); */
+
     snprintf(buf, sizeof(buf), "RDY: %d CNT: %lu", tud_ready(), xinput_send_count);
     oled_print(5, 0, buf);
 
     /* extern uint32_t debug_bits; */
     /* extern uint32_t debug_raw_bits; */
     /* snprintf(buf, sizeof(buf), "B: %04lX R: %04lX", debug_bits & 0xFFFF, debug_raw_bits & 0xFFFF); */
-    /* oled_print(6, 0, buf); */
-
-    /* extern uint8_t block_reason; */
-    /* snprintf(buf, sizeof(buf), "BLK_REASON: %d", block_reason); */
     /* oled_print(6, 0, buf); */
 
     extern uint32_t in_xfer_complete;
