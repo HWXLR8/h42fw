@@ -279,10 +279,19 @@ static uint8_t xinput_endpoint_in = 0;
 static uint8_t xinput_endpoint_out = 0;
 static xinput_auth xauth = {0};
 static uint8_t vendor_buffer[64] = {0};
+static uint8_t xinput_send_count = 0;
+static uint8_t xinput_out_buffer[32] = {0};
 
+// dbg
+uint32_t debug_bits = 0;
+uint32_t debug_raw_bits = 0;
+static uint32_t send_attempts = 0;
+static uint32_t send_blocked = 0;
 
 static void send_xinput_report(uint32_t bits) {
+  send_attempts++;
   if (!tud_ready() || xinput_endpoint_in == 0 || usbd_edpt_busy(0, xinput_endpoint_in)) {
+    send_blocked++;
     return;
   }
 
@@ -334,6 +343,7 @@ static void send_xinput_report(uint32_t bits) {
   usbd_edpt_claim(0, xinput_endpoint_in);
   usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
   usbd_edpt_release(0, xinput_endpoint_in);
+  xinput_send_count++;
 }
 
 
@@ -897,6 +907,20 @@ static void oled_draw_hud() {
     } else {
       oled_print(4, 0, "AUTH: N/A");
     }
+    // dbg
+    char buf[32];
+    snprintf(buf, sizeof(buf), "EP: %02X/%02X", xinput_endpoint_in, xinput_endpoint_out);
+    oled_print(4, 0, buf);
+    snprintf(buf, sizeof(buf), "RDY: %d CNT: %lu", tud_ready(), xinput_send_count);
+    oled_print(5, 0, buf);
+    extern uint32_t debug_bits;
+    extern uint32_t debug_raw_bits;
+    snprintf(buf, sizeof(buf), "B: %04lX R: %04lX", debug_bits & 0xFFFF, debug_raw_bits & 0xFFFF);
+    oled_print(6, 0, buf);
+    extern uint32_t send_attempts;
+    extern uint32_t send_blocked;
+    snprintf(buf, sizeof(buf), "ATT: %lu BLK: %lu", send_attempts, send_blocked);
+    oled_print(7, 0, buf);
   }
 }
 
@@ -1030,13 +1054,30 @@ int main() {
   led_frame last_sent = {0};
 
   bool was_pressed[BTN_COUNT] = {0};
+  bool xinput_out_queued = false;
 
   while (true) {
     tud_task();
 
+    // queue initial OUT endpoint transfer for Xbox 360
+    if (usb_mode == USB_MODE_XINPUT &&
+        tud_ready() &&
+        xinput_endpoint_out != 0 &&
+        !xinput_out_queued &&
+        !usbd_edpt_busy(0, xinput_endpoint_out)) {
+      usbd_edpt_claim(0, xinput_endpoint_out);
+      usbd_edpt_xfer(0, xinput_endpoint_out, xinput_out_buffer, sizeof(xinput_out_buffer));
+      usbd_edpt_release(0, xinput_endpoint_out);
+      xinput_out_queued = true;
+    }
+
     memset(pressed_led, 0, sizeof(pressed_led));
     uint32_t raw_bits;
     uint32_t bits = read_buttons(pressed_led, &raw_bits);
+
+    // dbg
+    debug_bits = bits;
+    debug_raw_bits = raw_bits;
 
     if (CSTATE == PLAY) {
       process_turbo(&bits);
@@ -1294,7 +1335,16 @@ static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *
 }
 
 static bool xinput_driver_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes) {
-  (void)rhport; (void)ep_addr; (void)result; (void)xferred_bytes;
+  (void)rhport;
+  (void)result;
+  (void)xferred_bytes;
+
+  // queue another transfer on OUT endpoint when data is received
+  if (ep_addr == xinput_endpoint_out) {
+    usbd_edpt_xfer(0, xinput_endpoint_out,
+                   xinput_out_buffer,
+                   sizeof(xinput_out_buffer));
+  }
   return true;
 }
 
