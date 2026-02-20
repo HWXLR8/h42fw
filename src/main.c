@@ -1081,23 +1081,8 @@ int main() {
   led_frame last_sent = {0};
 
   bool was_pressed[BTN_COUNT] = {0};
-  bool xinput_out_queued = false;
 
   while (true) {
-    tud_task();
-
-    // queue initial OUT endpoint transfer for Xbox 360
-    if (usb_mode == USB_MODE_XINPUT &&
-        tud_ready() &&
-        xinput_endpoint_out != 0 &&
-        !usbd_edpt_busy(0, xinput_endpoint_out) &&
-        !xinput_out_queued) {
-      usbd_edpt_claim(0, xinput_endpoint_out);
-      usbd_edpt_xfer(0, xinput_endpoint_out, xinput_out_buffer, sizeof(xinput_out_buffer));
-      usbd_edpt_release(0, xinput_endpoint_out);
-      xinput_out_queued = true;
-    }
-
     memset(pressed_led, 0, sizeof(pressed_led));
     uint32_t raw_bits;
     uint32_t bits = read_buttons(pressed_led, &raw_bits);
@@ -1121,6 +1106,16 @@ int main() {
         }
       }
       prev_bits = bits;
+
+      // queue initial OUT endpoint transfer for Xbox 360
+      if (usb_mode == USB_MODE_XINPUT &&
+          tud_ready() &&
+          xinput_endpoint_out != 0 &&
+          !usbd_edpt_busy(0, xinput_endpoint_out)) {
+        usbd_edpt_claim(0, xinput_endpoint_out);
+        usbd_edpt_xfer(0, xinput_endpoint_out, xinput_out_buffer, sizeof(xinput_out_buffer));
+        usbd_edpt_release(0, xinput_endpoint_out);
+      }
 
       // enqueue LED frame only if LEDs changed
       led_frame f;
@@ -1146,6 +1141,7 @@ int main() {
         was_pressed[i] = pressed;
       }
     }
+    tud_task();
   }
   return 0;
 }
@@ -1174,6 +1170,13 @@ void tud_hid_report_complete_cb(uint8_t itf, uint8_t const* report, uint16_t len
 
 
 /* ---- XInput Driver Implementation ---- */
+static bool xinput_driver_control_request(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request) {
+  (void)rhport;
+  (void)stage;
+  (void)request;
+  return true;
+}
+
 static bool xinput_driver_control_xfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
   uint16_t len = 0;
 
@@ -1325,18 +1328,12 @@ static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *
 
       // Open endpoints for Control interface only (we only use endpoint 0x81 and 0x02)
       if (itf_desc->bInterfaceProtocol == 0x01) {
-        for (uint8_t i = 0; i < itf_desc->bNumEndpoints; i++) {
-          tusb_desc_endpoint_t const *desc_ep = (tusb_desc_endpoint_t const *)p_desc;
-          TU_VERIFY(TUSB_DESC_ENDPOINT == tu_desc_type(desc_ep), 0);
-          TU_ASSERT(usbd_edpt_open(rhport, desc_ep), 0);
-
-          if (tu_edpt_dir(desc_ep->bEndpointAddress) == TUSB_DIR_IN) {
-            xinput_endpoint_in = desc_ep->bEndpointAddress;
-          } else {
-            xinput_endpoint_out = desc_ep->bEndpointAddress;
-          }
-          p_desc = tu_desc_next(p_desc);
-        }
+        TU_ASSERT(usbd_open_edpt_pair(rhport,
+                                      (const uint8_t*)p_desc,
+                                      itf_desc->bNumEndpoints,
+                                      TUSB_XFER_INTERRUPT,
+                                      &xinput_endpoint_out,
+                                      &xinput_endpoint_in), 0);
       } else {
         // for audio and plugin interfaces, skip endpoint descriptors
         // without opening them
@@ -1384,7 +1381,7 @@ static usbd_class_driver_t const xinput_driver = {
   .init = xinput_driver_init,
   .reset = xinput_driver_reset,
   .open = xinput_driver_open,
-  .control_xfer_cb = xinput_driver_control_xfer,
+  .control_xfer_cb = xinput_driver_control_request,
   .xfer_cb = xinput_driver_xfer_cb,
   .sof = NULL
 };
