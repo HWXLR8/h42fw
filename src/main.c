@@ -287,10 +287,17 @@ uint32_t debug_bits = 0;
 uint32_t debug_raw_bits = 0;
 static uint32_t send_attempts = 0;
 static uint32_t send_blocked = 0;
+static uint8_t block_reason = 0;
+static uint32_t in_xfer_complete = 0;
+static uint32_t out_xfer_complete = 0;
 
 static void send_xinput_report(uint32_t bits) {
   send_attempts++;
+  block_reason = 0;
   if (!tud_ready() || xinput_endpoint_in == 0 || usbd_edpt_busy(0, xinput_endpoint_in)) {
+    if (!tud_ready()) block_reason = 1;
+    else if (xinput_endpoint_in == 0) block_reason = 2;
+    else if (usbd_edpt_busy(0, xinput_endpoint_in)) block_reason = 3;
     send_blocked++;
     return;
   }
@@ -913,10 +920,20 @@ static void oled_draw_hud() {
     oled_print(4, 0, buf);
     snprintf(buf, sizeof(buf), "RDY: %d CNT: %lu", tud_ready(), xinput_send_count);
     oled_print(5, 0, buf);
-    extern uint32_t debug_bits;
-    extern uint32_t debug_raw_bits;
-    snprintf(buf, sizeof(buf), "B: %04lX R: %04lX", debug_bits & 0xFFFF, debug_raw_bits & 0xFFFF);
+
+    /* extern uint32_t debug_bits; */
+    /* extern uint32_t debug_raw_bits; */
+    /* snprintf(buf, sizeof(buf), "B: %04lX R: %04lX", debug_bits & 0xFFFF, debug_raw_bits & 0xFFFF); */
+    /* oled_print(6, 0, buf); */
+
+    /* extern uint8_t block_reason; */
+    /* snprintf(buf, sizeof(buf), "BLK_REASON: %d", block_reason); */
+    /* oled_print(6, 0, buf); */
+
+    extern uint32_t in_xfer_complete;
+    snprintf(buf, sizeof(buf), "IN_CB:%lu OUT:%02X%02X", in_xfer_complete, xinput_out_buffer[0], xinput_out_buffer[1]);
     oled_print(6, 0, buf);
+
     extern uint32_t send_attempts;
     extern uint32_t send_blocked;
     snprintf(buf, sizeof(buf), "ATT: %lu BLK: %lu", send_attempts, send_blocked);
@@ -1337,7 +1354,9 @@ static bool xinput_driver_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t
   (void)xferred_bytes;
 
   // queue another transfer on OUT endpoint when data is received
-  if (ep_addr == xinput_endpoint_out) {
+  if (ep_addr == xinput_endpoint_in) {
+    in_xfer_complete++;
+  } else if (ep_addr == xinput_endpoint_out) {
     usbd_edpt_xfer(0, xinput_endpoint_out,
                    xinput_out_buffer,
                    sizeof(xinput_out_buffer));
