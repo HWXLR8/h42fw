@@ -1426,7 +1426,7 @@ uint8_t const desc_configuration[] = {
 };
 
 
-// XInput configuration descriptor - MUST match GP2040-CE exactly for compatibility
+// XInput configuration descriptor
 const uint8_t desc_configuration_xinput[] = {
   // Configuration Descriptor
   0x09,        // bLength
