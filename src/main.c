@@ -281,20 +281,8 @@ static xinput_auth xauth = {0};
 static uint8_t vendor_buffer[64] = {0};
 static uint8_t xinput_send_count = 0;
 static uint8_t xinput_out_buffer[32] = {0};
-
-// dbg
-uint32_t debug_bits = 0;
-uint32_t debug_raw_bits = 0;
-static uint32_t send_attempts = 0;
-static uint32_t send_blocked = 0;
-static uint8_t block_reason = 0;
-static uint32_t in_xfer_complete = 0;
-static uint32_t out_xfer_complete = 0;
 static xinput_report last_xinput_data = {0};
-static uint8_t last_ep_addr = 0;
-static uint8_t xfer_cb_called = 0;
-static uint8_t xinput_driver_open_called = 0;
-static uint8_t xinput_driver_init_called = 0;
+
 
 static void send_xinput_report(uint32_t bits) {
   // Set report size
@@ -344,9 +332,6 @@ static void send_xinput_report(uint32_t bits) {
 
   // only send if report changed
   if (memcmp(&last_xinput_data, &xinput_data, sizeof(xinput_report)) != 0) {
-    send_attempts++;
-    block_reason = 0;
-
     if (tud_ready() && xinput_endpoint_in != 0 && !usbd_edpt_busy(0, xinput_endpoint_in)) {
       usbd_edpt_claim(0, xinput_endpoint_in);
       usbd_edpt_xfer(0, xinput_endpoint_in, (uint8_t*)&xinput_data, 20);
@@ -355,11 +340,6 @@ static void send_xinput_report(uint32_t bits) {
       // save the report we just sent
       memcpy(&last_xinput_data, &xinput_data, sizeof(xinput_report));
       xinput_send_count++;
-    } else {
-      if (!tud_ready()) block_reason = 1;
-      else if (xinput_endpoint_in == 0) block_reason = 2;
-      else if (usbd_edpt_busy(0, xinput_endpoint_in)) block_reason = 3;
-      send_blocked++;
     }
   }
 }
@@ -922,47 +902,7 @@ static void oled_draw_hud() {
       } else if (xauth.state == AUTH_READY) {
         oled_print(3, 0, "AUTH: OK");
       }
-    } else {
-      oled_print(4, 0, "AUTH: N/A");
     }
-    // dbg
-    char buf[32];
-
-    /* extern uint8_t block_reason; */
-    /* snprintf(buf, sizeof(buf), "BLK_REASON: %d", block_reason); */
-    /* oled_print(4, 0, buf); */
-
-
-    /* snprintf(buf, sizeof(buf), "EP: %02X/%02X", xinput_endpoint_in, xinput_endpoint_out); */
-    /* oled_print(4, 0, buf); */
-
-    snprintf(buf, sizeof(buf), "RDY: %d CNT: %lu", tud_ready(), xinput_send_count);
-    oled_print(4, 0, buf);
-
-    /* extern uint32_t debug_bits; */
-    /* extern uint32_t debug_raw_bits; */
-    /* snprintf(buf, sizeof(buf), "B: %04lX R: %04lX", debug_bits & 0xFFFF, debug_raw_bits & 0xFFFF); */
-    /* oled_print(6, 0, buf); */
-
-    extern uint8_t xfer_cb_called;
-    extern uint32_t in_xfer_complete;
-    extern uint32_t out_xfer_complete;
-    snprintf(buf, sizeof(buf), "IN_CB:%lu I:%lu O:%lu", xfer_cb_called, in_xfer_complete, out_xfer_complete);
-    oled_print(5, 0, buf);
-
-    // this is returning EP: 00==81?
-    /* extern uint8_t last_ep_addr; */
-    /* snprintf(buf, sizeof(buf), "EP: %02X==%02X?", last_ep_addr, xinput_endpoint_in); */
-    /* oled_print(6, 0, buf); */
-
-    extern uint8_t xinput_driver_init_called;
-    extern uint8_t xinput_driver_open_called;
-    snprintf(buf, sizeof(buf), "INIT: %u OPEN: %u", xinput_driver_init_called, xinput_driver_open_called);    oled_print(6, 0, buf);
-
-    extern uint32_t send_attempts;
-    extern uint32_t send_blocked;
-    snprintf(buf, sizeof(buf), "ATT: %lu BLK: %lu", send_attempts, send_blocked);
-    oled_print(7, 0, buf);
   }
 }
 
@@ -1101,10 +1041,6 @@ int main() {
     memset(pressed_led, 0, sizeof(pressed_led));
     uint32_t raw_bits;
     uint32_t bits = read_buttons(pressed_led, &raw_bits);
-
-    // dbg
-    debug_bits = bits;
-    debug_raw_bits = raw_bits;
 
     if (CSTATE == PLAY) {
       process_turbo(&bits);
@@ -1281,7 +1217,6 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 
 
 static void xinput_driver_init(void) {
-  xinput_driver_init_called++;
   memset(&xinput_data, 0, sizeof(xinput_data));
   xinput_data.rid = 0x00;
   xinput_data.rsize = 0x14;
@@ -1315,7 +1250,6 @@ static void xinput_driver_reset(uint8_t rhport) {
 }
 
 static uint16_t xinput_driver_open(uint8_t rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len) {
-  xinput_driver_open_called++;
   uint16_t driver_length = 0;
 
   // Xbox 360 has 4 interfaces: Control (0x5D/0x01), Audio (0x5D/0x03), Plugin (0x5D/0x02), Security (0xFD/0x13)
@@ -1360,14 +1294,8 @@ static bool xinput_driver_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t
   (void)result;
   (void)xferred_bytes;
 
-  xfer_cb_called++;
-  last_ep_addr = ep_addr;
-
   // queue another transfer on OUT endpoint when data is received
-  if (ep_addr == xinput_endpoint_in) {
-    in_xfer_complete++;
-  } else if (ep_addr == xinput_endpoint_out) {
-    out_xfer_complete++;
+  if (ep_addr == xinput_endpoint_out) {
     usbd_edpt_xfer(0, xinput_endpoint_out,
                    xinput_out_buffer,
                    sizeof(xinput_out_buffer));
