@@ -32,7 +32,7 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 | MiSTer FPGA          | ✅    |                                             |
 | Nintendo Switch      | ❌    |                                             |
 | Nintendo Switch 2    | ❌    |                                             |
-| Xbox 360             | ❌    |                                             |
+| Xbox 360             | ✅    |                                             |
 | PS1                  | ❌    |                                             |
 | PS2                  | ❌    |                                             |
 | PS3                  | ❌    |                                             |

@@ -8,10 +8,18 @@ pico_sdk_init()
 
 add_executable(h42fw
     src/main.c
+    src/xsm3/xsm3.c
+    src/xsm3/excrypt_des.c
+    src/xsm3/excrypt_sha.c
+    src/xsm3/excrypt_parve.c
+    src/xsm3/usbdsec.c
 )
 set_target_properties(h42fw PROPERTIES SUFFIX ".elf")
 pico_generate_pio_header(h42fw ${CMAKE_CURRENT_LIST_DIR}/lib/ws2812.pio)
-target_include_directories(h42fw PRIVATE ${CMAKE_CURRENT_LIST_DIR}/src)
+target_include_directories(h42fw PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/xsm3
+)
 
 target_link_libraries(h42fw
     pico_stdlib
