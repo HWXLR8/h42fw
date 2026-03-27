@@ -1228,7 +1228,7 @@ static void xinput_driver_init(void) {
     pico_unique_board_id_t board_id;
     pico_get_unique_board_id(&board_id);
     for(int i = 0; i < 0x0C; i++) {
-      serial[i] = 'A' + (board_id.id[i % PICO_UNIQUE_BOARD_ID_SIZE_BYTES] % 25);
+      serial[i] = 'A' + (board_id.id[i % PICO_UNIQUE_BOARD_ID_SIZE_BYTES] % 26);
     }
 
     // Initialize xsm3 with Microsoft controller identity
