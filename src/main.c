@@ -309,7 +309,7 @@ static void send_xinput_report(uint32_t bits) {
 
   if (bits & (1 << B5))  xinput_data.digital_buttons_2 |= 0x01; // LB
   if (bits & (1 << B4))  xinput_data.digital_buttons_2 |= 0x02; // RB
-  if (bits & (1 << B9))  xinput_data.digital_buttons_2 |= 0x04; // GUIDE
+  if (bits & (1 << B14))  xinput_data.digital_buttons_2 |= 0x04; // GUIDE
 
   if (bits & (1 << B1))  xinput_data.digital_buttons_2 |= 0x10; // A
   if (bits & (1 << B6))  xinput_data.digital_buttons_2 |= 0x10; // A
