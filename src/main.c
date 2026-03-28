@@ -8,6 +8,7 @@
 #include "hardware/i2c.h"
 #include "hardware/pio.h"
 #include "hardware/sync.h"
+#include "hardware/watchdog.h"
 #include "ws2812.pio.h"
 #include "bsp/board.h"
 #include "tusb.h"
@@ -710,8 +711,10 @@ static void act_turbo() {
 
 
 static void act_usb_mode_toggle() {
-  cfg.usb_mode = (cfg.usb_mode == USB_MODE_HID) ? USB_MODE_XINPUT : USB_MODE_HID;
+  USB_MODE new_mode = (cfg.usb_mode == USB_MODE_HID) ? USB_MODE_XINPUT : USB_MODE_HID;
+  cfg.usb_mode = new_mode;
   cfg_save();
+  watchdog_reboot(0, 0, 0);
 }
 
 

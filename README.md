@@ -50,4 +50,3 @@ Average latency is `0.814 ms` measured using the methodology described on [input
 | `TURBO`           | Enter turbo config mode (hold 1s)           |
 | `B8 + B9`         | Enter bootloader (instant)                  |
 
-**Note:** USB mode changes take effect on next boot.
